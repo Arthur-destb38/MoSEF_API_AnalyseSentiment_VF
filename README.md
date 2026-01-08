@@ -221,9 +221,9 @@ Projet réalisé dans le cadre du Master MoSEF (Modélisation Statistiques Écon
 
 - Arthur Destribats
 - Niama El Kamal
-- Arthur Destribats
+- Matéo Martin
 ---
 
 ## Licence
 
-Projet académique — Usage éducatif uniquement.
+Projet académique
