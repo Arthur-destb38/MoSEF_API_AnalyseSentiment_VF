@@ -361,7 +361,6 @@ def page_dashboard():
                 border-radius: 16px;
                 border: 1px dashed rgba(99, 102, 241, 0.3);
             ">
-                <div style="font-size: 3rem; margin-bottom: 1rem; color: #6366f1;">◈</div>
                 <div style="color: #64748b; font-size: 1.1rem;">Configure et lance une analyse</div>
                 <div style="color: #475569; font-size: 0.9rem; margin-top: 0.5rem;">Les résultats apparaîtront ici</div>
             </div>
@@ -377,7 +376,7 @@ def run_analysis(crypto, config, source, method, model, limit):
         return
     
     # Afficher confirmation de sauvegarde
-    st.success(f"✅ {len(posts)} posts sauvegardés dans la base de données")
+    st.success(f"{len(posts)} posts sauvegardés dans la base de données")
     
     with st.spinner(f"Analyse avec {model}..."):
         tokenizer, mod, analyze_fn = get_model(model)
@@ -1027,7 +1026,7 @@ def page_methodo():
 
 def page_stored_data():
     render_header()
-    st.markdown("### 📊 Données Stockées")
+    st.markdown("### Données Stockées")
     
     # Récupérer les statistiques
     stats = get_stats()
@@ -1087,7 +1086,7 @@ def page_stored_data():
     posts = get_all_posts(source=source, method=method, limit=limit)
     
     if posts:
-        st.success(f"✅ {len(posts)} posts trouvés")
+        st.success(f"{len(posts)} posts trouvés")
         
         # Afficher en DataFrame
         df = pd.DataFrame(posts)
@@ -1098,20 +1097,20 @@ def page_stored_data():
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("📥 Exporter en CSV"):
+            if st.button("Exporter en CSV"):
                 csv_path = export_to_csv(source=source, method=method)
-                st.success(f"✅ Exporté vers: {csv_path}")
+                st.success(f"Exporté vers: {csv_path}")
         
         with col2:
-            if st.button("📥 Exporter en JSON"):
+            if st.button("Exporter en JSON"):
                 json_path = export_to_json(source=source, method=method)
-                st.success(f"✅ Exporté vers: {json_path}")
+                st.success(f"Exporté vers: {json_path}")
     else:
         st.warning("Aucune donnée trouvée avec ces filtres.")
     
     # Informations sur les fichiers
     st.markdown("---")
-    st.markdown("#### 📁 Localisation des Fichiers")
+    st.markdown("#### Localisation des Fichiers")
     st.code(f"""
 Base de données SQLite: {stats['db_path']}
 Fichier JSONL: {stats['jsonl_path']}
@@ -1135,7 +1134,7 @@ def main():
         
         page = st.radio(
             "Navigation",
-            ["Dashboard", "Comparaison", "Multi-crypto", "Économétrie", "📊 Données Stockées", "Méthodologie"],
+            ["Dashboard", "Comparaison", "Multi-crypto", "Économétrie", "Données Stockées", "Méthodologie"],
             label_visibility="collapsed"
         )
     
