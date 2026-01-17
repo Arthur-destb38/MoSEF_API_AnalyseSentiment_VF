@@ -13,6 +13,7 @@ from datetime import datetime
 import time
 
 from app.scrapers import scrape_reddit, scrape_stocktwits, get_reddit_limits, get_stocktwits_limits
+from app.scrapers import scrape_telegram_simple, scrape_telegram_paginated, TELEGRAM_CHANNELS, get_telegram_limits
 from app.nlp import SentimentAnalyzer
 from app.prices import CryptoPrices
 from app.utils import clean_text
@@ -48,6 +49,7 @@ def get_analyzer(model: str = "finbert"):
 class SourceEnum(str, Enum):
     reddit = "reddit"
     stocktwits = "stocktwits"
+    telegram = "telegram"
 
 class MethodEnum(str, Enum):
     http = "http"
@@ -126,7 +128,8 @@ def get_scraping_limits():
     """Retourne toutes les limites de scraping"""
     return {
         "reddit": get_reddit_limits(),
-        "stocktwits": get_stocktwits_limits()
+        "stocktwits": get_stocktwits_limits(),
+        "telegram": get_telegram_limits()
     }
 
 
@@ -135,6 +138,55 @@ def get_scraping_limits():
 @app.get("/health")
 async def health():
     return {"status": "ok", "timestamp": datetime.now().isoformat()}
+
+
+@app.get("/telegram/channels", tags=["Telegram"])
+async def list_telegram_channels():
+    """Liste les channels Telegram crypto disponibles"""
+    return {
+        "channels": TELEGRAM_CHANNELS,
+        "count": len(TELEGRAM_CHANNELS)
+    }
+
+
+@app.get("/telegram/scrape/{channel}", tags=["Telegram"])
+async def scrape_telegram_channel(channel: str, limit: int = 50):
+    """
+    Scrape un channel Telegram spécifique
+    
+    **Channels populaires:**
+    - whale_alert_io: Alertes de gros mouvements
+    - bitcoinnews: News Bitcoin
+    - CoinMarketCapAnnouncements: Annonces CoinMarketCap
+    
+    **Limites:**
+    - Simple (≤30 posts): rapide
+    - Paginé (>30 posts): plus lent mais jusqu'à 500 posts
+    """
+    start = time.time()
+    
+    if limit > 30:
+        posts = scrape_telegram_paginated(channel, limit)
+    else:
+        posts = scrape_telegram_simple(channel, limit)
+    
+    # Adapter format
+    for p in posts:
+        p['title'] = p.get('text', '')
+    
+    elapsed = round(time.time() - start, 2)
+    
+    # Sauvegarde
+    storage_result = save_posts(posts, source="telegram", method="http")
+    
+    return {
+        "source": "Telegram",
+        "channel": channel,
+        "posts_count": len(posts),
+        "time_seconds": elapsed,
+        "storage": storage_result,
+        "posts": posts[:10]
+    }
 
 
 @app.get("/limits", tags=["Info"])
@@ -146,6 +198,7 @@ async def get_limits():
     - Reddit HTTP: max 1000 posts
     - Reddit Selenium: max 200 posts
     - StockTwits Selenium: max 300 posts (seule methode disponible)
+    - Telegram: max 30 (simple) ou 500 (paginé)
     """
     return {
         "reddit": {
@@ -155,6 +208,10 @@ async def get_limits():
         "stocktwits": {
             "selenium": {"max": 300, "description": "Seule methode (Cloudflare)"},
             "http": {"max": 0, "description": "Non disponible (Cloudflare)"}
+        },
+        "telegram": {
+            "simple": {"max": 30, "description": "Scraping basique rapide"},
+            "paginated": {"max": 500, "description": "Avec pagination (plus lent)"}
         }
     }
 
@@ -179,6 +236,17 @@ async def scrape(req: ScrapeRequest):
         posts = scrape_stocktwits(req.symbol, limit=req.limit)
         source_name = "StockTwits"
         method_used = "selenium"
+    elif req.source == SourceEnum.telegram:
+        # Telegram - utiliser pagination si > 30 posts
+        if req.limit > 30:
+            posts = scrape_telegram_paginated(req.symbol, req.limit)
+        else:
+            posts = scrape_telegram_simple(req.symbol, req.limit)
+        # Adapter format pour compatibilité
+        for p in posts:
+            p['title'] = p.get('text', '')
+        source_name = "Telegram"
+        method_used = "http"
     else:
         posts = scrape_reddit(req.symbol, limit=req.limit, method=req.method.value)
         source_name = "Reddit"
