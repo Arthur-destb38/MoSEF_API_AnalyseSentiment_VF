@@ -4,6 +4,7 @@ from .reddit_scraper import scrape_reddit, get_limits as get_reddit_limits
 from .stocktwits_scraper import scrape_stocktwits, get_limits as get_stocktwits_limits
 from .twitter_scraper import scrape_twitter, get_limits as get_twitter_limits
 from .tiktok_scraper import scrape_tiktok, get_limits as get_tiktok_limits
+from .youtube_scraper import scrape_youtube, get_limits as get_youtube_limits
 from .telegram_scraper import (
     scrape_telegram_simple, 
     scrape_telegram_paginated,
@@ -21,10 +22,12 @@ __all__ = [
     "scrape_stocktwits",
     "scrape_twitter",
     "scrape_tiktok",
+    "scrape_youtube",
     "get_reddit_limits",
     "get_stocktwits_limits",
     "get_twitter_limits",
     "get_tiktok_limits",
+    "get_youtube_limits",
     "scrape_telegram_simple",
     "scrape_telegram_paginated",
     "scrape_telegram_multi",

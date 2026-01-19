@@ -372,13 +372,17 @@ def scrape_twitter(
     if not password:
         password = os.environ.get("TWITTER_PASSWORD")
     
-    # Si on a des credentials, utiliser le mode login (Jose)
-    if username and password:
+    # Verifier si on a des cookies sauvegardes
+    cookies_exist = COOKIES_FILE.exists()
+    
+    # Si on a des cookies OU des credentials, utiliser le mode login (Jose)
+    if cookies_exist or (username and password):
+        print(f"Twitter: Mode login (cookies={cookies_exist}, creds={bool(username)})")
         return scrape_twitter_with_login(
             query=query,
             limit=min(limit, LIMITS["selenium"]),
-            username=username,
-            password=password,
+            username=username or "cookie_user",
+            password=password or "cookie_pass",
             min_likes=min_likes,
             min_replies=min_replies,
             start_date=start_date,
@@ -387,6 +391,7 @@ def scrape_twitter(
         )
     
     # Sinon, mode sans login (profils publics)
+    print("Twitter: Mode sans login (pas de cookies ni credentials)")
     limit = min(limit, LIMITS["no_login"])
     
     # Mapper query vers comptes influents
