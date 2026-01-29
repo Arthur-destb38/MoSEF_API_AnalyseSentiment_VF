@@ -23,10 +23,11 @@ from app.scrapers import scrape_telegram_simple, scrape_telegram_paginated, TELE
 from app.scrapers import scrape_4chan_biz, get_chan4_limits
 from app.scrapers import scrape_bitcointalk, get_bitcointalk_limits
 from app.scrapers import scrape_github_discussions, get_github_limits
+from app.scrapers import scrape_bluesky, get_bluesky_limits
 from app.nlp import load_finbert, load_cryptobert, analyze_finbert, analyze_cryptobert
 from app.utils import clean_text
 from app.prices import get_historical_prices, CryptoPrices
-from app.storage import save_posts, get_all_posts, export_to_csv, export_to_json, get_stats
+from app.storage import save_posts, get_all_posts, export_to_csv, export_to_json, get_stats, DB_PATH, JSONL_PATH
 
 try:
     from econometrics import run_full_analysis, run_demo_analysis
@@ -166,6 +167,18 @@ st.markdown("""
         margin-bottom: 2rem;
     }
     
+    /* Bouton Voir plus / Voir moins : couleur discrète, mêmes tons violet/bleu */
+    [class*="stMarkdown"]:has(.toggle-platforms-zone) + [class*="stHorizontal"] .stButton > button,
+    [class*="stMarkdown"]:has(.toggle-platforms-zone) + div .stButton > button {
+        background: rgba(99, 102, 241, 0.12) !important;
+        color: #a5b4fc !important;
+        border: 1px solid rgba(99, 102, 241, 0.3) !important;
+    }
+    [class*="stMarkdown"]:has(.toggle-platforms-zone) + [class*="stHorizontal"] .stButton > button:hover,
+    [class*="stMarkdown"]:has(.toggle-platforms-zone) + div .stButton > button:hover {
+        background: rgba(99, 102, 241, 0.22) !important;
+        border-color: rgba(99, 102, 241, 0.45) !important;
+    }
     .stButton > button {
         background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
         color: white;
@@ -255,6 +268,114 @@ st.markdown("""
     }
     
     .viewerBadge_container__1QSob {display: none;}
+    
+    /* Page d'accueil */
+    .accueil-hero {
+        text-align: center;
+        padding: 2rem 1rem 2.5rem;
+        max-width: 720px;
+        margin: 0 auto;
+    }
+    .accueil-badge {
+        display: inline-block;
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        color: #818cf8;
+        background: rgba(99, 102, 241, 0.15);
+        border: 1px solid rgba(99, 102, 241, 0.35);
+        padding: 0.35rem 0.75rem;
+        border-radius: 999px;
+        margin-bottom: 1.25rem;
+    }
+    .accueil-title {
+        font-size: 3rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 40%, #a5b4fc 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin: 0 0 0.5rem 0;
+        letter-spacing: -0.02em;
+    }
+    .accueil-tagline {
+        font-size: 1.25rem;
+        color: #94a3b8;
+        margin: 0 0 1rem 0;
+        font-weight: 500;
+    }
+    .accueil-desc {
+        font-size: 0.95rem;
+        color: #64748b;
+        line-height: 1.6;
+        margin: 0;
+    }
+    .accueil-intro {
+        font-size: 1.08rem;
+        color: #94a3b8;
+        line-height: 1.65;
+        margin: 1.5rem 0 0 0;
+        padding: 1rem 1.25rem;
+        background: rgba(99, 102, 241, 0.06);
+        border: 1px solid rgba(99, 102, 241, 0.15);
+        border-radius: 12px;
+        max-width: 720px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    .accueil-intro strong { color: #c4b5fd; }
+    .accueil-prices-label {
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #64748b;
+        margin-bottom: 0.75rem !important;
+    }
+    .accueil-price-card {
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.05) 100%);
+        border: 1px solid rgba(99, 102, 241, 0.2);
+        border-radius: 12px;
+        padding: 1.25rem;
+        text-align: center;
+        min-height: 100px;
+    }
+    .accueil-price-name {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .accueil-price-value {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: #e0e7ff;
+        margin: 0.35rem 0;
+    }
+    .accueil-price-delta {
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+    .accueil-price-delta.up { color: #4ade80; }
+    .accueil-price-delta.down { color: #f87171; }
+    .accueil-features {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 1.5rem;
+        margin-top: 2.5rem;
+        padding-top: 2rem;
+        border-top: 1px solid rgba(99, 102, 241, 0.15);
+    }
+    .accueil-feature {
+        font-size: 0.9rem;
+        color: #94a3b8;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .accueil-feature-icon { font-size: 1.1rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -276,7 +397,8 @@ LIMITS = {
     "Telegram": {"Simple": get_telegram_limits()["simple"], "Paginé": get_telegram_limits()["paginated"]},
     "4chan": {"HTTP": get_chan4_limits()["http"]},
     "Bitcointalk": {"HTTP": get_bitcointalk_limits()["http"]},
-    "GitHub": {"API": get_github_limits()["api"]}
+    "GitHub": {"API": get_github_limits()["api"]},
+    "Bluesky": {"API": get_bluesky_limits()["api"]}
 }
 
 # ============ CACHE ============
@@ -289,10 +411,29 @@ def get_finbert():
 def get_cryptobert():
     return load_cryptobert()
 
+ACCUEIL_CRYPTO_IDS = ["bitcoin", "ethereum", "solana", "cardano", "dogecoin", "ripple"]
+ACCUEIL_CRYPTO_NAMES = ["Bitcoin", "Ethereum", "Solana", "Cardano", "Dogecoin", "XRP"]
+
 @st.cache_data(ttl=300)
 def get_prices():
     client = CryptoPrices()
-    return client.get_multiple_prices(["bitcoin", "ethereum", "solana", "cardano", "dogecoin"])
+    return client.get_multiple_prices(ACCUEIL_CRYPTO_IDS)
+
+@st.cache_data(ttl=300)
+def get_accueil_historical(days: int = 14):
+    """Historique des 6 cryptos pour les mini-graphiques de la page d'accueil."""
+    import time
+    from app.prices import get_historical_prices
+    out = {}
+    for i, cid in enumerate(ACCUEIL_CRYPTO_IDS):
+        data = get_historical_prices(cid, days)
+        if not data and i > 0:
+            time.sleep(0.4)
+            data = get_historical_prices(cid, days)
+        out[cid] = data or []
+        if i < len(ACCUEIL_CRYPTO_IDS) - 1:
+            time.sleep(0.25)
+    return out
 
 def get_model(name):
     if name == "FinBERT":
@@ -350,6 +491,11 @@ def scrape_data(source, config, limit, method, telegram_channel=None, crypto_nam
         posts = scrape_github_discussions(query, limit)
         save_posts(posts, source="github", method="api")
         return posts
+    elif source == "Bluesky":
+        query = crypto_name or config.get('sub', 'Bitcoin').lower()
+        posts = scrape_bluesky(query, limit)
+        save_posts(posts, source="bluesky", method="api")
+        return posts
     else:
         posts = scrape_stocktwits(config['stocktwits'], limit)
         save_posts(posts, source="stocktwits", method="selenium")
@@ -380,6 +526,118 @@ def render_header():
     """, unsafe_allow_html=True)
 
 # ============ PAGES ============
+
+def page_accueil():
+    """Page d'accueil : hero, présentation, prix en direct, CTA vers le dashboard."""
+    st.markdown("""
+    <div class="accueil-hero">
+        <div class="accueil-badge">MoSEF 2025-2026</div>
+        <h1 class="accueil-title">Crypto Sentiment</h1>
+        <p class="accueil-tagline">Sentiment des réseaux sociaux & prix crypto</p>
+        <p class="accueil-desc">Analyse en temps réel du sentiment (Reddit, Twitter, Bluesky, 4chan, GitHub…) 
+        avec FinBERT & CryptoBERT. Scrape, compare et relie le sentiment aux mouvements de prix.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div class="accueil-intro">
+        Cet outil permet d'analyser le <strong>sentiment</strong> des discussions crypto sur plusieurs plateformes 
+        (Reddit, Twitter, Bluesky, 4chan, GitHub…) et de le mettre en regard des <strong>cours</strong>. 
+        Il aide à repérer d'éventuels signaux avant les mouvements de marché, à comparer les sources entre elles 
+        et à exploiter des modèles de langage spécialisés (FinBERT, CryptoBERT) pour une analyse plus fine.
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown('<div style="margin: 2rem 0 1.5rem 0;"></div>', unsafe_allow_html=True)
+    
+    # Prix en direct + mini graphiques (3 cryptos par ligne, 2 lignes)
+    st.markdown('<p class="accueil-prices-label">Prix en direct</p>', unsafe_allow_html=True)
+    try:
+        prices = get_prices()
+        historical = get_accueil_historical(14)
+    except Exception:
+        prices = {}
+        historical = {}
+    if prices is not None:
+        # Ordre fixe : toujours 6 cryptos (Bitcoin, Ethereum, Solana, Cardano, Dogecoin, XRP)
+        order = ACCUEIL_CRYPTO_IDS
+        for row_start in range(0, len(order), 3):
+            row_ids = order[row_start:row_start + 3]
+            cols = st.columns(3)
+            for col_idx, cid in enumerate(row_ids):
+                display_name = ACCUEIL_CRYPTO_NAMES[ACCUEIL_CRYPTO_IDS.index(cid)]
+                data = prices.get(cid) if prices else None
+                with cols[col_idx]:
+                    if data:
+                        change = data.get('change_24h', 0)
+                        price = data['price']
+                        if price >= 1000:
+                            price_str = f"${price:,.0f}"
+                        elif price >= 1:
+                            price_str = f"${price:,.2f}"
+                        else:
+                            price_str = f"${price:.4f}"
+                        delta_class = "up" if change >= 0 else "down"
+                        delta_html = f'<div class="accueil-price-delta {delta_class}">{change:+.2f}%</div>'
+                    else:
+                        price_str = "—"
+                        delta_html = '<div class="accueil-price-delta">—</div>'
+                    st.markdown(f"""
+                    <div class="accueil-price-card">
+                        <div class="accueil-price-name">{display_name.upper()}</div>
+                        <div class="accueil-price-value">{price_str}</div>
+                        {delta_html}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    # Mini graphique évolution (clé unique pour éviter StreamlitDuplicateElementId)
+                    series = historical.get(cid) or []
+                    fig = None
+                    if series:
+                        df = pd.DataFrame(series)
+                        if not df.empty and "date" in df.columns and "price" in df.columns:
+                            fig = go.Figure()
+                            fig.add_trace(go.Scatter(
+                                x=df["date"], y=df["price"],
+                                mode="lines", line=dict(color="#818cf8", width=2),
+                                fill="tozeroy", fillcolor="rgba(99, 102, 241, 0.15)"
+                            ))
+                    if fig is None:
+                        fig = go.Figure()
+                        fig.add_annotation(
+                            text="Données bientôt disponibles",
+                            xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False,
+                            font=dict(size=12, color="#64748b")
+                        )
+                        fig.update_layout(xaxis=dict(visible=False), yaxis=dict(visible=False))
+                    if fig is not None:
+                        fig.update_layout(
+                            margin=dict(l=0, r=0, t=20, b=0),
+                            height=180,
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            plot_bgcolor="rgba(0,0,0,0)",
+                            xaxis=dict(showgrid=False, tickfont=dict(size=9), color="#64748b"),
+                            yaxis=dict(showgrid=True, gridcolor="rgba(99,102,241,0.1)", tickfont=dict(size=9), color="#94a3b8"),
+                            showlegend=False
+                        )
+                        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key=f"accueil_chart_{cid}")
+                    st.markdown('<div style="margin-bottom: 1rem;"></div>', unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div class="accueil-price-card" style="grid-column: 1 / -1;">
+            <div class="accueil-price-name">Prix bientôt disponibles</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown('<div style="margin: 2rem 0 1rem 0;"></div>', unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div class="accueil-features">
+        <div class="accueil-feature"><span class="accueil-feature-icon">📊</span> Dashboard & scraping multi-sources</div>
+        <div class="accueil-feature"><span class="accueil-feature-icon">🤖</span> FinBERT & CryptoBERT</div>
+        <div class="accueil-feature"><span class="accueil-feature-icon">📈</span> Comparaison & économétrie</div>
+    </div>
+    """, unsafe_allow_html=True)
+
 
 def page_dashboard():
     render_header()
@@ -414,7 +672,7 @@ def page_dashboard():
         crypto = st.selectbox("Crypto", list(CRYPTO_LIST.keys()), key="dash_crypto")
         config = CRYPTO_LIST[crypto]
         
-        source = st.radio("Source", ["Reddit", "StockTwits", "Twitter", "Telegram", "4chan", "Bitcointalk", "GitHub"], horizontal=True, key="dash_source")
+        source = st.radio("Source", ["Reddit", "StockTwits", "Twitter", "Telegram", "4chan", "Bitcointalk", "GitHub", "Bluesky"], horizontal=True, key="dash_source")
         
         if source == "Reddit":
             method = st.radio("Méthode", ["HTTP", "Selenium"], horizontal=True, key="dash_method")
@@ -485,6 +743,16 @@ def page_dashboard():
             <div class="success-box">
                 <strong>GitHub</strong> — Issues/Discussions projets crypto<br>
                 <small>API officielle GitHub (gratuite). Discussions techniques sur projets Bitcoin, Ethereum, etc.</small>
+            </div>
+            """, unsafe_allow_html=True)
+        elif source == "Bluesky":
+            method = "API"
+            max_limit = LIMITS["Bluesky"]["API"]
+            telegram_channel = None
+            st.markdown("""
+            <div class="success-box">
+                <strong>Bluesky</strong> — Recherche AT Protocol<br>
+                <small>Recherche par mot-clé. Configure BLUESKY_USERNAME et BLUESKY_APP_PASSWORD dans .env.</small>
             </div>
             """, unsafe_allow_html=True)
         else:
@@ -683,7 +951,7 @@ def page_compare():
         crypto = st.selectbox("Crypto", list(CRYPTO_LIST.keys()), key="cmp_crypto")
         config = CRYPTO_LIST[crypto]
         
-        source = st.radio("Source", ["Reddit", "StockTwits", "Twitter", "Telegram", "4chan", "Bitcointalk", "GitHub"], key="cmp_source")
+        source = st.radio("Source", ["Reddit", "StockTwits", "Twitter", "Telegram", "4chan", "Bitcointalk", "GitHub", "Bluesky"], key="cmp_source")
         
         telegram_channel = None
         if source == "Reddit":
@@ -697,6 +965,18 @@ def page_compare():
             max_limit = LIMITS["Telegram"][method]
             telegram_channel = st.selectbox("Channel", list(TELEGRAM_CHANNELS.keys()),
                                            format_func=lambda x: f"{x}", key="cmp_tg_channel")
+        elif source == "4chan":
+            method = "HTTP"
+            max_limit = LIMITS["4chan"]["HTTP"]
+        elif source == "Bitcointalk":
+            method = "HTTP"
+            max_limit = LIMITS["Bitcointalk"]["HTTP"]
+        elif source == "GitHub":
+            method = "API"
+            max_limit = LIMITS["GitHub"]["API"]
+        elif source == "Bluesky":
+            method = "API"
+            max_limit = LIMITS["Bluesky"]["API"]
         else:
             method = "Selenium"
             max_limit = LIMITS["StockTwits"]["Selenium"]
@@ -790,7 +1070,7 @@ def page_multi():
         selected = st.multiselect("Cryptos", list(CRYPTO_LIST.keys()),
                                   default=["Bitcoin", "Ethereum", "Solana"], key="multi_crypto")
         
-        source = st.radio("Source", ["Reddit", "StockTwits", "Twitter", "Telegram", "4chan", "Bitcointalk", "GitHub"], key="multi_source")
+        source = st.radio("Source", ["Reddit", "StockTwits", "Twitter", "Telegram", "4chan", "Bitcointalk", "GitHub", "Bluesky"], key="multi_source")
         
         telegram_channel = None
         if source == "Reddit":
@@ -815,6 +1095,10 @@ def page_multi():
         elif source == "GitHub":
             method = "API"
             max_limit = LIMITS["GitHub"]["API"]
+            telegram_channel = None
+        elif source == "Bluesky":
+            method = "API"
+            max_limit = LIMITS["Bluesky"]["API"]
             telegram_channel = None
         else:
             method = "Selenium"
@@ -1322,10 +1606,109 @@ def page_stored_data():
     st.markdown("---")
     st.markdown("#### Localisation des Fichiers")
     st.code(f"""
-Base de données SQLite: {stats['db_path']}
-Fichier JSONL: {stats['jsonl_path']}
+Base de données SQLite: {stats.get('db_path', DB_PATH)}
+Fichier JSONL: {stats.get('jsonl_path', JSONL_PATH)}
 Exports CSV/JSON: data/exports/
     """)
+
+
+# ============ PAGE ANALYSES DES RÉSULTATS ============
+
+def page_analyses_resultats():
+    """Page pour sélectionner des données en base et les analyser avec FinBERT ou CryptoBERT."""
+    st.markdown("""
+    <div style="margin-bottom: 1.5rem;">
+        <h2 style="font-size: 1.8rem; font-weight: 600; color: #e0e7ff; margin-bottom: 0.3rem;">Analyses des résultats</h2>
+        <p style="color: #64748b; font-size: 0.9rem;">Choisir des données en base et les analyser avec FinBERT ou CryptoBERT</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    stats = get_stats()
+    if stats.get("total_posts", 0) == 0:
+        st.warning("Aucune donnée en base. Allez sur **Scraping** pour collecter des posts, puis revenez ici.")
+        return
+    
+    by_sm = stats.get("by_source_method") or []
+    sources = sorted(set(s["source"] for s in by_sm))
+    methods = sorted(set(s["method"] for s in by_sm))
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        source_filter = st.selectbox("Source", ["Toutes"] + sources, key="analyses_source")
+    with col2:
+        method_filter = st.selectbox("Méthode", ["Toutes"] + methods, key="analyses_method")
+    with col3:
+        limit = st.number_input("Nombre de posts", min_value=10, max_value=2000, value=200, key="analyses_limit")
+    with col4:
+        model_choice = st.radio("Modèle", ["FinBERT", "CryptoBERT"], key="analyses_model", horizontal=True)
+    
+    st.markdown("---")
+    
+    if st.button("Lancer l'analyse", type="primary", key="analyses_run"):
+        source = source_filter if source_filter != "Toutes" else None
+        method = method_filter if method_filter != "Toutes" else None
+        posts = get_all_posts(source=source, method=method, limit=limit)
+        
+        if not posts:
+            st.warning("Aucun post trouvé avec ces filtres.")
+            return
+        
+        tok, mod, analyze_fn = get_model(model_choice)
+        results = []
+        progress = st.progress(0.0, text="Analyse en cours…")
+        
+        for i, post in enumerate(posts):
+            text = clean_text((post.get("title") or post.get("text") or "").strip())
+            if not text or len(text) < 5:
+                continue
+            out = analyze_fn(text, tok, mod)
+            results.append({
+                "texte": text[:120] + ("…" if len(text) > 120 else ""),
+                "score": out["score"],
+                "label": out["label"],
+            })
+            progress.progress((i + 1) / len(posts), text=f"Analyse {i + 1}/{len(posts)}")
+        
+        progress.empty()
+        
+        if not results:
+            st.warning("Aucun post avec assez de texte à analyser.")
+            return
+        
+        df = pd.DataFrame(results)
+        
+        st.success(f"**{len(results)}** posts analysés avec **{model_choice}**.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            mean_score = df["score"].mean()
+            render_metric_card(f"Score moyen ({model_choice})", f"{mean_score:+.3f}")
+        with col2:
+            label_counts = df["label"].value_counts()
+            st.markdown("**Répartition des labels**")
+            for lbl, cnt in label_counts.items():
+                st.caption(f"{lbl}: {cnt} ({100 * cnt / len(df):.1f}%)")
+        
+        st.markdown("#### Détail des résultats")
+        st.dataframe(df, use_container_width=True, column_config={"texte": st.column_config.TextColumn("Texte", width="large")})
+        
+        st.markdown("#### Distribution des scores")
+        fig = px.histogram(
+            df, x="score", color="label",
+            color_discrete_map={"Bullish": "#4ade80", "Bearish": "#f87171", "Neutral": "#94a3b8"},
+            nbins=30
+        )
+        fig.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font_color="#e0e7ff",
+            xaxis=dict(gridcolor="rgba(99,102,241,0.15)", title="Score"),
+            yaxis=dict(gridcolor="rgba(99,102,241,0.15)", title="Nombre"),
+            height=350,
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
 
 # ============ PAGE SCRAPING ============
@@ -1346,9 +1729,10 @@ def page_scraping():
         "YouTube": {"icon": "▶️", "max": 5000, "desc": "Commentaires vidéos"},
         "Telegram": {"icon": "✈️", "max": 500, "desc": "Channels publics"},
         "StockTwits": {"icon": "📈", "max": 1000, "desc": "Labels inclus (scroll amélioré)"},
-        "4chan": {"icon": "💬", "max": 200, "desc": "/biz/ discussions"},
+        "Bluesky": {"icon": "🦋", "max": 200, "desc": "Recherche AT Protocol"},
         "Bitcointalk": {"icon": "💭", "max": 200, "desc": "Forum historique"},
         "GitHub": {"icon": "💻", "max": 200, "desc": "Issues/Discussions"},
+        "4chan": {"icon": "💬", "max": 200, "desc": "/biz/ discussions"},
     }
     
     # Sélection de la source - 3 plateformes par ligne
@@ -1360,9 +1744,9 @@ def page_scraping():
     sources_list = list(sources.items())
     num_rows = (len(sources_list) + 2) // 3  # Arrondir vers le haut (3 par ligne)
     
-    # Afficher UNIQUEMENT les 2 premières lignes (6 plateformes) dans la section principale
-    # Les autres lignes seront affichées uniquement quand "Voir plus" est cliqué
-    for row in range(2):  # Toujours afficher seulement les lignes 0 et 1
+    # Afficher les 2 premières lignes (6 plateformes)
+    st.markdown('<div style="margin-bottom: 4px;"></div>', unsafe_allow_html=True)
+    for row in range(2):
         cols = st.columns(3)
         for col_idx in range(3):
             source_idx = row * 3 + col_idx
@@ -1372,14 +1756,14 @@ def page_scraping():
                     selected = st.session_state.scrape_source == name
                     border_color = "#6366f1" if selected else "rgba(100,100,140,0.3)"
                     bg = "rgba(99, 102, 241, 0.1)" if selected else "rgba(30, 30, 50, 0.5)"
-                    
                     st.markdown(f"""
                     <div style="
                         background: {bg};
                         border: 2px solid {border_color};
                         border-radius: 12px;
-                        padding: 16px 8px;
+                        padding: 14px 10px;
                         text-align: center;
+                        min-height: 100px;
                     ">
                         <div style="font-size: 1.5rem;">{info['icon']}</div>
                         <div style="font-weight: 600; color: {'#fff' if selected else '#a5b4fc'}; margin-top: 4px;">{name}</div>
@@ -1387,28 +1771,17 @@ def page_scraping():
                         <div style="font-size: 0.65rem; color: #475569; margin-top: 2px;">{info['max']} max</div>
                     </div>
                     """, unsafe_allow_html=True)
-                    
                     btn_label = "Actif" if selected else "Sélectionner"
                     if st.button(btn_label, key=f"src_{name}", use_container_width=True, disabled=selected):
                         st.session_state.scrape_source = name
                         st.session_state.pop('scrape_results', None)
                         st.rerun()
     
-    # Bouton "Voir plus" / "Voir moins" si plus de 2 lignes
+    # Bouton "Voir plus" / "Voir moins" et plateformes masquées
     if num_rows > 2:
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col2:
-            if st.session_state.show_more_platforms:
-                if st.button("▲ Voir moins", use_container_width=True, key="toggle_platforms"):
-                    st.session_state.show_more_platforms = False
-                    st.rerun()
-            else:
-                if st.button("▼ Voir plus", use_container_width=True, key="toggle_platforms"):
-                    st.session_state.show_more_platforms = True
-                    st.rerun()
-        
-        # Afficher UNIQUEMENT les lignes supplémentaires (à partir de la ligne 2) quand "Voir plus" est cliqué
         if st.session_state.show_more_platforms:
+            # D'abord les 3 cartes, puis le bouton "Voir moins" en bas
+            st.markdown('<div style="margin-top: 10px; margin-bottom: 4px;"></div>', unsafe_allow_html=True)
             for row in range(2, num_rows):
                 cols = st.columns(3)
                 for col_idx in range(3):
@@ -1419,14 +1792,14 @@ def page_scraping():
                             selected = st.session_state.scrape_source == name
                             border_color = "#6366f1" if selected else "rgba(100,100,140,0.3)"
                             bg = "rgba(99, 102, 241, 0.1)" if selected else "rgba(30, 30, 50, 0.5)"
-                            
                             st.markdown(f"""
                             <div style="
                                 background: {bg};
                                 border: 2px solid {border_color};
                                 border-radius: 12px;
-                                padding: 16px 8px;
+                                padding: 14px 10px;
                                 text-align: center;
+                                min-height: 100px;
                             ">
                                 <div style="font-size: 1.5rem;">{info['icon']}</div>
                                 <div style="font-weight: 600; color: {'#fff' if selected else '#a5b4fc'}; margin-top: 4px;">{name}</div>
@@ -1434,12 +1807,24 @@ def page_scraping():
                                 <div style="font-size: 0.65rem; color: #475569; margin-top: 2px;">{info['max']} max</div>
                             </div>
                             """, unsafe_allow_html=True)
-                            
                             btn_label = "Actif" if selected else "Sélectionner"
                             if st.button(btn_label, key=f"src_{name}_more", use_container_width=True, disabled=selected):
                                 st.session_state.scrape_source = name
                                 st.session_state.pop('scrape_results', None)
                                 st.rerun()
+            # Bouton "Voir moins" en bas — pleine largeur, style discret (CSS .toggle-platforms-zone)
+            st.markdown('<div class="toggle-platforms-zone" style="margin-top: 10px; margin-bottom: 6px;"></div>', unsafe_allow_html=True)
+            if st.button("▲ Voir moins", use_container_width=True, key="toggle_platforms",
+                         help="Masquer Bitcointalk, GitHub, 4chan"):
+                st.session_state.show_more_platforms = False
+                st.rerun()
+        else:
+            # Quand replié : bouton "Voir plus" pleine largeur, style discret
+            st.markdown('<div class="toggle-platforms-zone" style="margin-top: 12px; margin-bottom: 6px;"></div>', unsafe_allow_html=True)
+            if st.button("▼ Voir plus", use_container_width=True, key="toggle_platforms",
+                         help="Afficher Bitcointalk, GitHub, 4chan"):
+                st.session_state.show_more_platforms = True
+                st.rerun()
     
     st.markdown("---")
     
@@ -1708,15 +2093,44 @@ def page_scraping():
                 st.warning("⚠️ Aucun post récupéré")
             st.session_state.scrape_results = {"posts": posts, "source": "github", "crypto": crypto}
     
+    elif source == "Bluesky":
+        c1, c2 = st.columns(2)
+        with c1:
+            crypto = st.selectbox("Cryptomonnaie", list(CRYPTO_LIST.keys()), key="scr_crypto")
+        with c2:
+            limit = st.slider("Nombre de posts", 10, 200, 50, key="scr_limit")
+        
+        st.markdown("""
+        <div class="info-box">
+            <strong>Bluesky</strong> — Recherche AT Protocol<br>
+            <small>Configure BLUESKY_USERNAME et BLUESKY_APP_PASSWORD dans .env pour utiliser ton compte.</small>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if st.button("Lancer le scraping", type="primary", use_container_width=True, key="scr_btn"):
+            config = CRYPTO_LIST[crypto]
+            with st.spinner("Scraping Bluesky en cours..."):
+                query = config.get('sub', 'Bitcoin').lower()
+                posts = scrape_bluesky(query, limit)
+            if posts:
+                st.success(f"✅ {len(posts)} posts récupérés depuis Bluesky")
+            else:
+                st.warning("⚠️ Aucun post récupéré. Vérifie BLUESKY_USERNAME et BLUESKY_APP_PASSWORD dans .env.")
+            st.session_state.scrape_results = {"posts": posts, "source": "bluesky", "crypto": crypto}
+    
     # Affichage des résultats
     st.markdown("---")
     
     if 'scrape_results' in st.session_state and st.session_state.scrape_results:
         data = st.session_state.scrape_results
         posts = data['posts']
+        source_result = data.get('source', '')
         
         if not posts:
-            st.error("Aucun post récupéré")
+            if source_result == "bluesky":
+                st.info("**Bluesky** : aucun post trouvé. Vérifie BLUESKY_USERNAME et BLUESKY_APP_PASSWORD dans .env.")
+            else:
+                st.error("Aucun post récupéré")
         else:
             # Stats
             labeled = sum(1 for p in posts if p.get('human_label'))
@@ -1805,24 +2219,32 @@ def main():
         
         st.markdown("---")
         
+        # Dashboard masqué (page conservée dans le code)
+        if st.session_state.get("nav_radio") == "Dashboard":
+            st.session_state.nav_radio = "Accueil"
         page = st.radio(
             "Navigation",
-            ["Scraping", "Dashboard", "Comparaison", "Multi-crypto", "Économétrie", "Données", "Méthodologie"],
+            ["Accueil", "Scraping", "Comparaison", "Multi-crypto", "Économétrie", "Données", "Analyses des résultats", "Méthodologie"],
+            key="nav_radio",
             label_visibility="collapsed"
         )
     
-    if "Scraping" in page:
-        page_scraping()
+    if "Accueil" in page:
+        page_accueil()
     elif "Dashboard" in page:
         page_dashboard()
+    elif "Scraping" in page:
+        page_scraping()
     elif "Comparaison" in page:
         page_compare()
-    elif "Multi" in page:
+    elif "Multi-crypto" in page:
         page_multi()
     elif "Économétrie" in page:
         page_econometrie()
     elif "Données" in page:
         page_stored_data()
+    elif "Analyses des résultats" in page:
+        page_analyses_resultats()
     elif "Méthodologie" in page:
         page_methodo()
 

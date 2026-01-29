@@ -53,8 +53,8 @@ Une fois le sentiment calculé, on le confronte aux prix réels via :
 
 ### Prérequis
 
-- Python 3.10 ou plus récent
-- Poetry (gestionnaire de dépendances Python)
+- **Python 3.10 à 3.14** (compatibilité des dépendances, notamment atproto)
+- **Poetry** (gestionnaire de dépendances Python)
 
 ### Étapes
 
@@ -66,15 +66,27 @@ cd Projet_API
 # Installer Poetry si nécessaire
 curl -sSL https://install.python-poetry.org | python3 -
 # Ou avec pip :
-# pip install poetry
+pip3 install --user poetry
 
 # Installer toutes les dépendances
 poetry install
+# Si "poetry" n'est pas dans le PATH :
+python3 -m poetry install
 ```
 
-La première installation prend quelques minutes car elle télécharge PyTorch et les Transformers (~2 Go).
+La première installation prend quelques minutes (PyTorch + Transformers ~2 Go).
 
-**Note** : Ce projet utilise **Poetry** pour la gestion des dépendances. Toutes les commandes doivent être exécutées avec `poetry run`.
+**Poetry** : Toutes les commandes du projet s’exécutent avec `poetry run ...`. Si la commande `poetry` n’est pas trouvée, utilise `python3 -m poetry run ...`.
+
+### Ajouter une dépendance
+
+```bash
+poetry add <nom-du-package>
+# Ou :
+python3 -m poetry add <nom-du-package>
+```
+
+Puis régénérer le lock si besoin : `poetry lock` (ou `python3 -m poetry lock`).
 
 ---
 

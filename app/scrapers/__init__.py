@@ -8,6 +8,7 @@ from .youtube_scraper import scrape_youtube, get_limits as get_youtube_limits
 from .chan4_scraper import scrape_4chan_biz, get_limits as get_chan4_limits
 from .bitcointalk_scraper import scrape_bitcointalk, get_limits as get_bitcointalk_limits
 from .github_scraper import scrape_github_discussions, scrape_github_issues, get_limits as get_github_limits
+from .bluesky_scraper import scrape_bluesky, get_limits as get_bluesky_limits
 from .telegram_scraper import (
     scrape_telegram_simple, 
     scrape_telegram_paginated,
@@ -31,6 +32,8 @@ __all__ = [
     "scrape_bitcointalk",
     "scrape_github_discussions",
     "scrape_github_issues",
+    "scrape_bluesky",
+    "get_bluesky_limits",
     "get_reddit_limits",
     "get_stocktwits_limits",
     "get_twitter_limits",

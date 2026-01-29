@@ -6,6 +6,7 @@ Base de données partagée sur le cloud pour que tous les utilisateurs voient le
 import hashlib
 import json
 import os
+import sqlite3
 from datetime import datetime
 from urllib.parse import urlparse, quote, unquote
 
@@ -17,7 +18,6 @@ try:
     POSTGRES_AVAILABLE = True
 except ImportError:
     POSTGRES_AVAILABLE = False
-    import sqlite3
 
 _BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DATA_DIR = os.path.join(_BASE_DIR, "data")
