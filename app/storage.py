@@ -7,8 +7,23 @@ import hashlib
 import json
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, date
 from urllib.parse import urlparse, quote, unquote
+
+
+def _parse_created_utc_to_date(value) -> date | None:
+    """Convertit created_utc (ISO ou timestamp) en date, ou None si invalide."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    try:
+        if "-" in s:
+            return datetime.fromisoformat(s.replace("Z", "+00:00")[:10]).date()
+        return datetime.utcfromtimestamp(float(s)).date()
+    except (ValueError, TypeError, OSError):
+        return None
 
 # Essayer PostgreSQL (cloud) d'abord, sinon SQLite (local)
 USE_POSTGRES = False
@@ -294,56 +309,89 @@ def save_posts(posts: list, source: str | None = None, method: str | None = None
     return {"inserted": inserted, "total": len(posts), "db_type": db_type}
 
 
-def get_all_posts(source: str | None = None, method: str | None = None, limit: int | None = None) -> list[dict]:
-    """Retrieve all posts from the database with optional filtering."""
+def get_all_posts(
+    source: str | list[str] | None = None,
+    method: str | None = None,
+    limit: int | None = None,
+    date_from: date | str | None = None,
+    date_to: date | str | None = None,
+) -> list[dict]:
+    """Retrieve posts with optional filtering by source(s), method and publication date."""
     conn, db_type = _get_connection()
     if not conn:
         return []
-    
+
+    # Normaliser source : liste ou None
+    sources = None
+    if source is not None:
+        if isinstance(source, list):
+            sources = [s for s in source if s]
+        else:
+            sources = [source] if source else None
+
+    # Normaliser les dates (str YYYY-MM-DD -> date)
+    d_from = None
+    d_to = None
+    if date_from is not None:
+        d_from = date_from if isinstance(date_from, date) else datetime.strptime(str(date_from)[:10], "%Y-%m-%d").date()
+    if date_to is not None:
+        d_to = date_to if isinstance(date_to, date) else datetime.strptime(str(date_to)[:10], "%Y-%m-%d").date()
+
+    # Quand on filtre par date, on récupère plus de lignes puis on filtre en Python (formats created_utc mixtes)
+    fetch_limit = limit
+    if (d_from is not None or d_to is not None) and (limit is None or limit > 0):
+        fetch_limit = (limit or 5000) * 3
+        fetch_limit = min(fetch_limit, 15000)
+
     cur = conn.cursor()
-    
+
     if db_type == "postgres":
         query = f"SELECT * FROM {POSTGRES_TABLE} WHERE 1=1"
         params = []
-        
-        if source:
-            query += " AND source = %s"
-            params.append(source)
-        
+        if sources:
+            query += " AND source IN %s"
+            params.append(tuple(sources))
         if method:
             query += " AND method = %s"
             params.append(method)
-        
         query += " ORDER BY scraped_at DESC"
-        
-        if limit:
-            query += f" LIMIT {limit}"
-        
+        if fetch_limit:
+            query += f" LIMIT {fetch_limit}"
         cur.execute(query, params)
         columns = [desc[0] for desc in cur.description]
         posts = [dict(zip(columns, row)) for row in cur.fetchall()]
     else:
         query = "SELECT * FROM posts WHERE 1=1"
         params = []
-        
-        if source:
-            query += " AND source = ?"
-            params.append(source)
-        
+        if sources:
+            placeholders = ",".join("?" * len(sources))
+            query += f" AND source IN ({placeholders})"
+            params.extend(sources)
         if method:
             query += " AND method = ?"
             params.append(method)
-        
         query += " ORDER BY scraped_at DESC"
-        
-        if limit:
-            query += f" LIMIT {limit}"
-        
+        if fetch_limit:
+            query += f" LIMIT {fetch_limit}"
         cur.execute(query, params)
         columns = [desc[0] for desc in cur.description]
         posts = [dict(zip(columns, row)) for row in cur.fetchall()]
-    
+
     conn.close()
+
+    if d_from is not None or d_to is not None:
+        filtered = []
+        for p in posts:
+            d = _parse_created_utc_to_date(p.get("created_utc"))
+            if d is None:
+                continue
+            if d_from is not None and d < d_from:
+                continue
+            if d_to is not None and d > d_to:
+                continue
+            filtered.append(p)
+        posts = filtered[:limit] if limit else filtered
+
     return posts
 
 

@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import sys
 import os
 from dotenv import load_dotenv
@@ -28,7 +28,7 @@ from app.scrapers import get_youtube_limits
 from app.nlp import load_finbert, load_cryptobert, analyze_finbert, analyze_cryptobert
 from app.utils import clean_text
 from app.prices import get_historical_prices, CryptoPrices
-from app.storage import save_posts, get_all_posts, export_to_csv, export_to_json, get_stats, DB_PATH, JSONL_PATH
+from app.storage import save_posts, get_all_posts, export_to_csv, export_to_json, get_stats, DB_PATH, JSONL_PATH, _parse_created_utc_to_date
 
 # ============ PAGE CONFIG ============
 
@@ -190,7 +190,7 @@ st.markdown("""
         transform: translateY(-2px);
         box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
     }
-    
+
     .stSelectbox > div > div,
     .stMultiSelect > div > div {
         background: rgba(30, 30, 46, 0.8);
@@ -510,6 +510,7 @@ def render_metric_card(label, value, delta=None, delta_type="neutral"):
         {delta_html}
     </div>
     """, unsafe_allow_html=True)
+
 
 def render_header():
     st.markdown("""
@@ -1158,20 +1159,43 @@ def page_stored_data():
     if "data_viz_tab" not in st.session_state:
         st.session_state.data_viz_tab = "overview"
 
-    # Boutons étalés sur toute la largeur (4 colonnes)
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        if st.button("Répartition par source", use_container_width=True, key="btn_overview"):
+        if st.button(
+            "Répartition par source",
+            use_container_width=True,
+            key="btn_overview",
+            type="primary" if st.session_state.data_viz_tab == "overview" else "secondary"
+        ):
             st.session_state.data_viz_tab = "overview"
+            st.rerun()
     with col2:
-        if st.button("Source × Méthode", use_container_width=True, key="btn_sources"):
+        if st.button(
+            "Source × Méthode",
+            use_container_width=True,
+            key="btn_sources",
+            type="primary" if st.session_state.data_viz_tab == "sources" else "secondary"
+        ):
             st.session_state.data_viz_tab = "sources"
+            st.rerun()
     with col3:
-        if st.button("Évolution temporelle", use_container_width=True, key="btn_timeline"):
+        if st.button(
+            "Évolution temporelle",
+            use_container_width=True,
+            key="btn_timeline",
+            type="primary" if st.session_state.data_viz_tab == "timeline" else "secondary"
+        ):
             st.session_state.data_viz_tab = "timeline"
+            st.rerun()
     with col4:
-        if st.button("Scores & texte", use_container_width=True, key="btn_scores"):
-            st.session_state.data_viz_tab = "scores"
+        if st.button(
+            "Publication des posts",
+            use_container_width=True,
+            key="btn_publications",
+            type="primary" if st.session_state.data_viz_tab == "publications" else "secondary"
+        ):
+            st.session_state.data_viz_tab = "publications"
+            st.rerun()
 
     st.markdown("---")
 
@@ -1243,45 +1267,42 @@ def page_stored_data():
         else:
             st.caption("Aucune donnée pour afficher la timeline.")
 
-    else:
-        st.markdown("Distribution des **scores** (upvotes, etc.) et longueur des textes.")
+    elif st.session_state.data_viz_tab == "publications":
+        st.markdown("        **Distribution de la publication des posts** : répartition des dates de publication des posts dans la base.")
         if sample_posts:
-            df_s = pd.DataFrame(sample_posts)
-            c1, c2 = st.columns(2)
-            with c1:
-                if "score" in df_s.columns and df_s["score"].notna().any():
-                    df_s["score"] = pd.to_numeric(df_s["score"], errors="coerce").fillna(0).astype(int)
-                    fig_score = px.histogram(
-                        df_s, x="score", nbins=50,
-                        title="Distribution des scores",
-                        labels={"score": "Score", "count": "Nombre"}
-                    )
-                    fig_score.update_layout(
-                        plot_bgcolor="rgba(0,0,0,0)",
-                        paper_bgcolor="rgba(0,0,0,0)",
-                        font_color="#e0e7ff"
-                    )
-                    st.plotly_chart(fig_score, use_container_width=True)
-                else:
-                    st.caption("Colonne score absente ou vide.")
-            with c2:
-                if "text" in df_s.columns:
-                    df_s["text_len"] = df_s["text"].fillna("").str.len()
-                    fig_len = px.histogram(
-                        df_s, x="text_len", nbins=50,
-                        title="Longueur des textes (caractères)",
-                        labels={"text_len": "Longueur", "count": "Nombre"}
-                    )
-                    fig_len.update_layout(
-                        plot_bgcolor="rgba(0,0,0,0)",
-                        paper_bgcolor="rgba(0,0,0,0)",
-                        font_color="#e0e7ff"
-                    )
-                    st.plotly_chart(fig_len, use_container_width=True)
+            dates = []
+            for p in sample_posts:
+                d = _parse_created_utc_to_date(p.get("created_utc"))
+                if d is not None:
+                    dates.append(d)
+            if dates:
+                df_pub = pd.DataFrame({"date": dates})
+                daily = df_pub.groupby("date", as_index=False).size()
+                daily = daily.sort_values("date")
+                fig_pub = px.bar(
+                    daily, x="date", y="size",
+                    title="Nombre de posts par date de publication",
+                    labels={"size": "Nombre de posts", "date": "Date de publication"},
+                    color="size",
+                    color_continuous_scale="Blues"
+                )
+                fig_pub.update_layout(
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    font_color="#e0e7ff",
+                    xaxis=dict(tickformat="%Y-%m-%d", gridcolor="rgba(255,255,255,0.1)"),
+                    yaxis=dict(gridcolor="rgba(255,255,255,0.1)"),
+                    showlegend=False
+                )
+                fig_pub.update_coloraxes(showscale=False)
+                st.plotly_chart(fig_pub, use_container_width=True)
+            else:
+                st.caption("Aucune date de publication exploitable dans l'échantillon (created_utc absent ou invalide).")
         else:
-            st.caption("Aucune donnée pour les graphiques.")
+            st.caption("Aucune donnée pour afficher la distribution.")
         st.markdown("---")
-        st.markdown("**💡 Interprétation** — *Scores* : la plupart des posts ont souvent un score faible (distribution en L) ; les posts à fort score sont plus « visibles » et peuvent peser plus dans le sentiment. *Longueur des textes* : une concentration sur les courtes longueurs est typique des réseaux sociaux ; les textes très longs (articles, threads) sont moins nombreux mais souvent plus riches pour l’analyse.")
+        st.markdown("**💡 Interprétation** — Ce graphique montre combien de posts ont été **publiés** (sur les plateformes sources) à chaque date. Une répartition étalée dans le temps indique un échantillon varié ; des pics sur certaines dates reflètent des moments de forte activité sur les réseaux.")
+
 
     st.markdown("---")
     st.markdown("#### Consulter les Données")
@@ -1330,57 +1351,205 @@ Exports: data/exports/
 # ============ PAGE ANALYSES DES RÉSULTATS ============
 
 def page_analyses_resultats():
-    """Page d'analyse sentiment avec onglets."""
+    """Page d'analyse sentiment — même DA que la page Données."""
     render_header()
-    
-    st.title("🔬 Analyse de Sentiment")
-    
+    st.markdown("### Analyse de Sentiment")
+
+    st.markdown("""
+    Cette page permet d'**analyser le sentiment** des posts stockés à l'aide de modèles NLP (FinBERT ou CryptoBERT).
+    Vous pouvez lancer une **analyse globale** sur un échantillon filtré, ou **comparer le sentiment par crypto** (Bitcoin, Ethereum, etc.).
+    """)
+    st.markdown("---")
+
     stats = get_stats()
     total_posts = stats.get("total_posts", 0)
-    
+
     if total_posts == 0:
         st.warning("Aucune donnée en base. Collectez d'abord des posts via **Scraping**.")
         return
-    
-    # Métriques rapides en haut
-    col1, col2, col3 = st.columns(3)
+
+    # --- Vue d'ensemble (même style que Données) ---
+    st.markdown("#### Vue d'ensemble")
+    sources_count = len(set(s["source"] for s in stats.get("by_source_method", [])))
+    db_label = "Supabase" if stats.get("db_type") == "postgres" else "SQLite"
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("Posts en base", f"{total_posts:,}")
+        render_metric_card("Posts en base", f"{total_posts:,}")
     with col2:
-        sources_count = len(set(s["source"] for s in stats.get("by_source_method", [])))
-        st.metric("Sources", sources_count)
+        render_metric_card("Sources", str(sources_count))
     with col3:
-        db_type = stats.get("db_type", "sqlite")
-        st.metric("Base", "Cloud" if db_type == "postgres" else "Local")
-    
-    st.divider()
-    
-    # Onglets
-    tab1, tab2 = st.tabs(["📊 Analyse globale", "🪙 Par crypto"])
-    
-    # === ONGLET 1 : ANALYSE GLOBALE ===
-    with tab1:
-        st.subheader("Analyse sur tous les posts")
+        render_metric_card("Base", db_label)
+    with col4:
+        render_metric_card("Modèles", "2 modèles")
+    st.caption("**Sources** = nombre de plateformes d'où viennent les posts (Reddit, Twitter, Telegram, StockTwits, etc.). **Modèles** = FinBERT et CryptoBERT.")
+
+    st.markdown("---")
+
+    # --- Boutons mode d'analyse ---
+    if "analysis_mode" not in st.session_state:
+        st.session_state.analysis_mode = "global"
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button(
+            "Analyse globale",
+            use_container_width=True,
+            key="btn_analysis_global",
+            type="primary" if st.session_state.analysis_mode == "global" else "secondary"
+        ):
+            st.session_state.analysis_mode = "global"
+            st.rerun()
+    with col2:
+        if st.button(
+            "Par crypto",
+            use_container_width=True,
+            key="btn_analysis_crypto",
+            type="primary" if st.session_state.analysis_mode == "crypto" else "secondary"
+        ):
+            st.session_state.analysis_mode = "crypto"
+            st.rerun()
+
+    st.markdown("---")
+
+    SOURCES = ["reddit", "twitter", "telegram", "stocktwits", "4chan", "bitcointalk", "github", "bluesky", "youtube"]
+    cryptos = {
+        "Bitcoin": {"keywords": ["bitcoin", "btc"], "icon": "₿"},
+        "Ethereum": {"keywords": ["ethereum", "eth"], "icon": "Ξ"},
+        "Solana": {"keywords": ["solana", "sol"], "icon": "◎"},
+        "Cardano": {"keywords": ["cardano", "ada"], "icon": "₳"},
+    }
+
+    # CSS global pour styliser les boutons : non-sélectionnés = gris plat, sélectionnés = violet enfoncé
+    st.markdown("""
+    <style>
+    /* Boutons NON sélectionnés (secondary) = gris plat */
+    [data-testid="stHorizontalBlock"] button[kind="secondary"] {
+        border-radius: 9999px !important;
+        padding: 10px 16px !important;
+        font-size: 0.82rem !important;
+        font-weight: 500 !important;
+        border: 1px solid rgba(100, 116, 139, 0.5) !important;
+        background: rgba(30, 41, 59, 0.6) !important;
+        color: #94a3b8 !important;
+        box-shadow: none !important;
+        transition: all 0.15s ease !important;
+    }
+    [data-testid="stHorizontalBlock"] button[kind="secondary"]:hover {
+        background: rgba(51, 65, 85, 0.8) !important;
+        border-color: rgba(148, 163, 184, 0.6) !important;
+        color: #e2e8f0 !important;
+    }
+    /* Boutons SÉLECTIONNÉS (primary) = violet enfoncé */
+    [data-testid="stHorizontalBlock"] button[kind="primary"] {
+        border-radius: 9999px !important;
+        padding: 10px 16px !important;
+        font-size: 0.82rem !important;
+        font-weight: 600 !important;
+        border: 2px solid #8b5cf6 !important;
+        background: linear-gradient(180deg, #4c1d95 0%, #5b21b6 100%) !important;
+        color: #e9d5ff !important;
+        box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.5), 0 0 12px rgba(139, 92, 246, 0.4) !important;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4) !important;
+        transition: all 0.15s ease !important;
+    }
+    [data-testid="stHorizontalBlock"] button[kind="primary"]:hover {
+        background: linear-gradient(180deg, #5b21b6 0%, #6d28d9 100%) !important;
+        box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.5), 0 0 18px rgba(139, 92, 246, 0.55) !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # === MODE GLOBAL ===
+    if st.session_state.analysis_mode == "global":
+        st.markdown("Analyse du **sentiment sur l'ensemble des posts** (ou un sous-ensemble filtré).")
+        st.markdown("#### Paramètres")
+
+        if "glob_sources" not in st.session_state:
+            st.session_state.glob_sources = ["reddit", "twitter", "telegram"]
+
+        st.markdown("**Source(s)** — Cliquez sur une bulle pour l’ajouter ou la retirer.")
+        # Boutons : primary si sélectionné (violet enfoncé), secondary sinon (gris plat)
+        bubble_cols = st.columns(9)
+        for i, src in enumerate(SOURCES):
+            with bubble_cols[i]:
+                is_selected = src in st.session_state.glob_sources
+                if st.button(
+                    src,
+                    key=f"glob_src_{src}",
+                    use_container_width=True,
+                    type="primary" if is_selected else "secondary"
+                ):
+                    if src in st.session_state.glob_sources:
+                        st.session_state.glob_sources = [s for s in st.session_state.glob_sources if s != src]
+                    else:
+                        st.session_state.glob_sources = st.session_state.glob_sources + [src]
+                    st.rerun()
+
+
+        if st.session_state.glob_sources:
+            st.caption(f"**{len(st.session_state.glob_sources)} source(s) sélectionnée(s)** : {', '.join(st.session_state.glob_sources)}")
+
+        limit = st.slider("Nombre de posts", 50, 1000, 200, 50, key="glob_limit")
+
+        period_choice = st.selectbox(
+            "Date de publication des posts",
+            ["Toutes les dates", "7 derniers jours", "30 derniers jours", "Personnalisé"],
+            key="glob_period"
+        )
+        date_from_global = None
+        date_to_global = None
+        if period_choice == "7 derniers jours":
+            date_to_global = date.today()
+            date_from_global = date_to_global - timedelta(days=7)
+        elif period_choice == "30 derniers jours":
+            date_to_global = date.today()
+            date_from_global = date_to_global - timedelta(days=30)
+        elif period_choice == "Personnalisé":
+            d1, d2 = st.columns(2)
+            with d1:
+                date_from_global = st.date_input("Du", value=date.today() - timedelta(days=30), key="glob_date_from")
+            with d2:
+                date_to_global = st.date_input("Au", value=date.today(), key="glob_date_to")
+
+        st.markdown("---")
+        st.markdown("#### Modèle NLP")
+        st.caption("Choisissez le modèle pour l'analyse de sentiment.")
         
-        SOURCES = ["reddit", "twitter", "telegram", "stocktwits", "4chan", "bitcointalk", "github", "bluesky", "youtube"]
-        by_sm = stats.get("by_source_method") or []
-        METHODS = sorted(set(s["method"] for s in by_sm) | {"http", "selenium", "api"})
+        # Initialiser le modèle sélectionné
+        if "glob_model" not in st.session_state:
+            st.session_state.glob_model = "FinBERT"
         
-        with st.expander("⚙️ Filtres", expanded=True):
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                source = st.selectbox("Source", ["Toutes"] + SOURCES, key="glob_source")
-            with c2:
-                method = st.selectbox("Méthode", ["Toutes"] + METHODS, key="glob_method")
-            with c3:
-                limit = st.slider("Nombre de posts", 50, 1000, 200, 50, key="glob_limit")
-            
-            model = st.radio("Modèle NLP", ["FinBERT", "CryptoBERT"], horizontal=True, key="glob_model")
+        # Boutons modèle + bouton lancer
+        m1, m2, m3 = st.columns([1, 1, 2])
+        with m1:
+            if st.button(
+                "FinBERT",
+                key="btn_finbert",
+                use_container_width=True,
+                type="primary" if st.session_state.glob_model == "FinBERT" else "secondary"
+            ):
+                st.session_state.glob_model = "FinBERT"
+                st.rerun()
+        with m2:
+            if st.button(
+                "CryptoBERT",
+                key="btn_cryptobert",
+                use_container_width=True,
+                type="primary" if st.session_state.glob_model == "CryptoBERT" else "secondary"
+            ):
+                st.session_state.glob_model = "CryptoBERT"
+                st.rerun()
+        with m3:
+            run_global = st.button("Lancer l'analyse", type="primary", key="glob_run", use_container_width=True)
         
-        if st.button("🚀 Analyser", type="primary", key="glob_run"):
-            src = source if source != "Toutes" else None
-            mth = method if method != "Toutes" else None
-            posts = get_all_posts(source=src, method=mth, limit=limit)
+        model = st.session_state.glob_model
+
+        if run_global:
+            src = st.session_state.glob_sources if st.session_state.glob_sources else None
+            posts = get_all_posts(
+                source=src, limit=limit,
+                date_from=date_from_global, date_to=date_to_global
+            )
             
             if not posts:
                 st.error("Aucun post trouvé.")
@@ -1404,22 +1573,18 @@ def page_analyses_resultats():
                 if results:
                     df = pd.DataFrame(results)
                     mean_score = df["Score"].mean()
-                    
-                    # Résultats
-                    st.success(f"✅ {len(results)} posts analysés")
-                    
+                    st.success(f"{len(results)} posts analysés")
+
                     m1, m2, m3 = st.columns(3)
                     with m1:
-                        color = "🟢" if mean_score > 0.1 else "🔴" if mean_score < -0.1 else "🟡"
-                        st.metric("Score moyen", f"{mean_score:+.3f}", delta=color)
+                        render_metric_card("Score moyen", f"{mean_score:+.3f}")
                     with m2:
                         bullish = (df["Label"] == "Bullish").sum()
-                        st.metric("Bullish", f"{bullish} ({100*bullish/len(df):.0f}%)")
+                        render_metric_card("Bullish", f"{bullish} ({100 * bullish / len(df):.0f} %)")
                     with m3:
                         bearish = (df["Label"] == "Bearish").sum()
-                        st.metric("Bearish", f"{bearish} ({100*bearish/len(df):.0f}%)")
-                    
-                    # Graphique
+                        render_metric_card("Bearish", f"{bearish} ({100 * bearish / len(df):.0f} %)")
+
                     fig = px.histogram(df, x="Score", color="Label",
                                        color_discrete_map={"Bullish": "#22c55e", "Bearish": "#ef4444", "Neutral": "#6b7280"},
                                        nbins=25)
@@ -1430,41 +1595,108 @@ def page_analyses_resultats():
                         yaxis=dict(gridcolor="rgba(255,255,255,0.1)")
                     )
                     st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Tableau
                     st.dataframe(df, use_container_width=True, height=300)
+
+                    st.markdown("---")
+                    st.markdown("**💡 Interprétation** — Un score moyen positif indique un sentiment plutôt haussier ; négatif, plutôt baissier. La répartition Bullish / Bearish / Neutral donne le consensus. FinBERT est plus généraliste, CryptoBERT est entraîné sur du texte crypto.")
                 else:
                     st.warning("Aucun texte exploitable.")
-    
-    # === ONGLET 2 : PAR CRYPTO ===
-    with tab2:
-        st.subheader("Comparer le sentiment par crypto")
+
+    # === MODE PAR CRYPTO ===
+    else:
+        st.markdown("Comparez le **sentiment par crypto** : les posts contenant les mots-clés de chaque actif sont analysés séparément.")
+        st.markdown("#### Paramètres")
+
+        # Initialiser les cryptos sélectionnées
+        if "selected_cryptos" not in st.session_state:
+            st.session_state.selected_cryptos = ["Bitcoin", "Ethereum"]
+
+        st.markdown("**Crypto(s)** — Cliquez sur une bulle pour l'ajouter ou la retirer.")
+        crypto_cols = st.columns(4)
+        crypto_names = list(cryptos.keys())
+        for i, name in enumerate(crypto_names):
+            with crypto_cols[i]:
+                is_selected = name in st.session_state.selected_cryptos
+                icon = cryptos[name]["icon"]
+                if st.button(
+                    f"{icon} {name}",
+                    key=f"crypto_btn_{name}",
+                    use_container_width=True,
+                    type="primary" if is_selected else "secondary"
+                ):
+                    if name in st.session_state.selected_cryptos:
+                        st.session_state.selected_cryptos = [c for c in st.session_state.selected_cryptos if c != name]
+                    else:
+                        st.session_state.selected_cryptos = st.session_state.selected_cryptos + [name]
+                    st.rerun()
         
-        cryptos = {
-            "Bitcoin": {"keywords": ["bitcoin", "btc"], "icon": "₿"},
-            "Ethereum": {"keywords": ["ethereum", "eth"], "icon": "Ξ"},
-            "Solana": {"keywords": ["solana", "sol"], "icon": "◎"},
-            "Cardano": {"keywords": ["cardano", "ada"], "icon": "₳"},
-        }
-        
-        selected = st.multiselect(
-            "Cryptos à analyser",
-            list(cryptos.keys()),
-            default=["Bitcoin", "Ethereum"],
-            key="crypto_select"
+        selected = st.session_state.selected_cryptos
+        if selected:
+            st.caption(f"**{len(selected)} crypto(s) sélectionnée(s)** : {', '.join(selected)}")
+
+        limit_crypto = st.slider("Posts max", 100, 1000, 300, 50, key="crypto_limit")
+
+        period_crypto = st.selectbox(
+            "Date de publication des posts",
+            ["Toutes les dates", "7 derniers jours", "30 derniers jours", "Personnalisé"],
+            key="crypto_period"
         )
+        date_from_crypto = None
+        date_to_crypto = None
+        if period_crypto == "7 derniers jours":
+            date_to_crypto = date.today()
+            date_from_crypto = date_to_crypto - timedelta(days=7)
+        elif period_crypto == "30 derniers jours":
+            date_to_crypto = date.today()
+            date_from_crypto = date_to_crypto - timedelta(days=30)
+        elif period_crypto == "Personnalisé":
+            d1, d2 = st.columns(2)
+            with d1:
+                date_from_crypto = st.date_input("Du", value=date.today() - timedelta(days=30), key="crypto_date_from")
+            with d2:
+                date_to_crypto = st.date_input("Au", value=date.today(), key="crypto_date_to")
         
-        c1, c2 = st.columns(2)
-        with c1:
-            limit_crypto = st.slider("Posts max", 100, 1000, 300, 50, key="crypto_limit")
-        with c2:
-            model_crypto = st.radio("Modèle", ["FinBERT", "CryptoBERT"], horizontal=True, key="crypto_model")
+        st.markdown("---")
+        st.markdown("#### Modèle NLP")
+        st.caption("Choisissez le modèle pour l'analyse de sentiment.")
         
-        if st.button("🚀 Comparer", type="primary", key="crypto_run"):
+        # Initialiser le modèle sélectionné pour le mode crypto
+        if "crypto_model" not in st.session_state:
+            st.session_state.crypto_model = "FinBERT"
+        
+        # Boutons modèle + bouton lancer (même layout que Analyse globale)
+        m1, m2, m3 = st.columns([1, 1, 2])
+        with m1:
+            if st.button(
+                "FinBERT",
+                key="btn_crypto_finbert",
+                use_container_width=True,
+                type="primary" if st.session_state.crypto_model == "FinBERT" else "secondary"
+            ):
+                st.session_state.crypto_model = "FinBERT"
+                st.rerun()
+        with m2:
+            if st.button(
+                "CryptoBERT",
+                key="btn_crypto_cryptobert",
+                use_container_width=True,
+                type="primary" if st.session_state.crypto_model == "CryptoBERT" else "secondary"
+            ):
+                st.session_state.crypto_model = "CryptoBERT"
+                st.rerun()
+        with m3:
+            run_crypto = st.button("Lancer la comparaison", type="primary", key="crypto_run", use_container_width=True)
+        
+        model_crypto = st.session_state.crypto_model
+
+        if run_crypto:
             if not selected:
-                st.warning("Sélectionne au moins une crypto.")
+                st.warning("Sélectionnez au moins une crypto.")
             else:
-                posts = get_all_posts(limit=limit_crypto)
+                posts = get_all_posts(
+                    limit=limit_crypto,
+                    date_from=date_from_crypto, date_to=date_to_crypto
+                )
                 if not posts:
                     st.error("Aucun post en base.")
                 else:
@@ -1493,10 +1725,8 @@ def page_analyses_resultats():
                     bar.empty()
                     
                     df = pd.DataFrame(results)
-                    
-                    st.success(f"✅ {len(selected)} cryptos analysées")
-                    
-                    # Graphique barres
+                    st.success(f"{len(selected)} cryptos analysées")
+
                     plot_df = df[df["Score"].notna()].copy()
                     if not plot_df.empty:
                         fig = px.bar(plot_df, x="Crypto", y="Score",
@@ -1511,13 +1741,15 @@ def page_analyses_resultats():
                             showlegend=False
                         )
                         st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Tableau
+
                     st.dataframe(
-                        df.assign(Score=df["Score"].apply(lambda x: f"{x:+.3f}" if x else "—")),
+                        df.assign(Score=df["Score"].apply(lambda x: f"{x:+.3f}" if x is not None and not (isinstance(x, float) and np.isnan(x)) else "—")),
                         use_container_width=True,
                         hide_index=True
                     )
+
+                    st.markdown("---")
+                    st.markdown("**💡 Interprétation** — Un score plus élevé pour une crypto reflète un discours plus haussier dans les posts qui la mentionnent. Le nombre de « Posts » par crypto dépend du volume de discussions ; une crypto peu mentionnée peut donner un score basé sur peu d'occurrences.")
 
 
 # ============ PAGE SCRAPING ============
