@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Tests / cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Env vars
+.env
+.env.*
+
+# Streamlit secrets (ne pas commiter)
+.streamlit/secrets.toml
+
+# Données locales (ne pas commiter)
+data/*.jsonl
+data/*.db
+data/twitter_cookies.json
+data/exports/*
+!data/exports/.gitkeep

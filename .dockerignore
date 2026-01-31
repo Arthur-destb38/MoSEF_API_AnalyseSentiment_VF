@@ -1,0 +1,41 @@
+# Ignorer dans Docker
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Données locales
+data/*.jsonl
+data/*.db
+data/exports/*
+.env
+.env.*
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+.DS_Store
+
+# Tests
+test_*.py
+*.md
+!README.md
+
+# Documentation
+DEPLOY.md
+SUPABASE_SETUP.md
+INSTALL_DB.md
+DISCORD_SETUP.md
+STOCKAGE_SETUP.md

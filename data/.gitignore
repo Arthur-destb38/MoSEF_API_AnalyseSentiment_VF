@@ -1,0 +1,9 @@
+# Ignore les fichiers de données scrapées
+*.db
+*.jsonl
+exports/*.csv
+exports/*.json
+
+# Garder le dossier mais pas son contenu
+!.gitkeep
+!README.md

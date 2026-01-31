@@ -1,0 +1,13 @@
+# Render Blueprint - pré-remplit les champs quand tu connectes le repo.
+# Tu dois quand même ajouter APP_PASSWORD dans Environment ( Advanced > Environment ).
+
+services:
+  - type: web
+    name: crypto-sentiment
+    runtime: python
+
+    buildCommand: pip install poetry && poetry install --no-interaction --no-ansi
+    startCommand: streamlit run streamlit_app.py --server.port $PORT --server.address 0.0.0.0
+
+    # Ajoute APP_PASSWORD (et optionnellement YOUTUBE_API_KEY, etc.) dans le dashboard Render
+    # (Environment / Variables d'environnement).
