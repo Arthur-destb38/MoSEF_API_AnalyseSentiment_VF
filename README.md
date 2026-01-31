@@ -78,8 +78,8 @@ Les actifs supportés incluent notamment Bitcoin, Ethereum, Solana, Cardano, Dog
 ### Démarrage rapide (recommandé)
 
 ```bash
-git clone https://github.com/Arthur-destb38/Projet_API.git
-cd Projet_API
+git clone https://github.com/Arthur-destb38/projet-api-VF.git
+cd projet-api-VF
 
 # Lancer le script d'installation et de démarrage
 ./run.sh
