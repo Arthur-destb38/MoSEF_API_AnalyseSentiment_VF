@@ -1,13 +1,5 @@
 """
-Bluesky Scraper - Recherche de posts crypto via l'API AT Protocol.
-Avec compte : login via atproto SDK (recommandé, évite le 403).
-Sans compte : tentative API publique (souvent 403).
-
-Pour utiliser un compte Bluesky :
-1. Crée un compte sur bsky.app
-2. Paramètres > App passwords : crée un mot de passe d'app
-3. Dans .env : BLUESKY_USERNAME=tonhandle.bsky.social et BLUESKY_APP_PASSWORD=xxxx-xxxx-xxxx
-4. Installe atproto si besoin : pip install atproto (Python <3.15)
+Bluesky Scraper
 """
 
 import os
@@ -28,7 +20,6 @@ get_limits = get_bluesky_limits
 
 
 def _post_view_to_dict(p, limit: int) -> Dict:
-    """Convertit un PostView atproto en dict commun au dashboard."""
     uri = getattr(p, "uri", None) or (p.get("uri") if isinstance(p, dict) else "")
     author = getattr(p, "author", None) or (p.get("author") if isinstance(p, dict) else {})
     record = getattr(p, "record", None) or (p.get("record") if isinstance(p, dict) else {})
@@ -73,11 +64,9 @@ def _post_view_to_dict(p, limit: int) -> Dict:
 
 
 def scrape_bluesky_with_login(query: str, limit: int, username: str, password: str) -> List[Dict]:
-    """Recherche avec compte Bluesky (atproto SDK)."""
     try:
         from atproto import Client
     except ImportError:
-        print("Bluesky: pour utiliser un compte, installe 'atproto': pip install atproto (ou poetry add atproto, Python <3.15 requis).")
         return []
 
     posts = []
@@ -88,7 +77,6 @@ def scrape_bluesky_with_login(query: str, limit: int, username: str, password: s
     try:
         client = Client()
         client.login(username, password)
-        print(f"Bluesky: recherche '{query}' (compte connecté)...")
 
         while len(posts) < limit:
             params = {"q": query, "limit": per_request, "sort": "latest"}
@@ -116,35 +104,26 @@ def scrape_bluesky_with_login(query: str, limit: int, username: str, password: s
                 break
             time.sleep(0.3)
 
-        print(f"Bluesky: {len(posts)} posts récupérés (auth)")
-    except Exception as e:
-        print(f"Bluesky (auth) erreur: {e}")
-        if "LoginFailed" in str(type(e).__name__) or "Invalid" in str(e):
-            print("Vérifie BLUESKY_USERNAME et BLUESKY_APP_PASSWORD dans .env (mot de passe d'app depuis Paramètres Bluesky).")
+        print(f"Done: {len(posts)} posts")
+    except Exception:
+        pass
 
     return posts[:limit]
 
 
 def scrape_bluesky(query: str = "bitcoin", limit: int = 50) -> List[Dict]:
-    """
-    Recherche de posts Bluesky par mot-clé (crypto).
-    Si BLUESKY_USERNAME et BLUESKY_APP_PASSWORD sont définis dans .env, utilise le login (recommandé).
-    Sinon tente l'API publique (souvent 403).
-    """
     username = os.environ.get("BLUESKY_USERNAME", "").strip()
     password = os.environ.get("BLUESKY_APP_PASSWORD") or os.environ.get("BLUESKY_PASSWORD", "").strip()
 
     if username and password:
         return scrape_bluesky_with_login(query, limit, username, password)
 
-    # Fallback: API publique sans auth (souvent 403)
     posts = []
     seen_uris = set()
     cursor = None
     per_request = min(100, limit)
 
     try:
-        print(f"Bluesky: recherche '{query}' (sans compte, peut renvoyer 403)...")
 
         while len(posts) < limit:
             params = {"q": query, "limit": per_request, "sort": "latest"}
@@ -162,7 +141,6 @@ def scrape_bluesky(query: str = "bitcoin", limit: int = 50) -> List[Dict]:
             )
 
             if resp.status_code in (401, 403):
-                print("Bluesky: accès refusé (403/401). Ajoute BLUESKY_USERNAME et BLUESKY_APP_PASSWORD dans .env pour utiliser un compte.")
                 break
             resp.raise_for_status()
 
@@ -185,10 +163,10 @@ def scrape_bluesky(query: str = "bitcoin", limit: int = 50) -> List[Dict]:
                 break
             time.sleep(0.3)
 
-        print(f"Bluesky: {len(posts)} posts récupérés")
-    except requests.RequestException as e:
-        print(f"Bluesky erreur réseau: {e}")
-    except Exception as e:
-        print(f"Bluesky erreur: {e}")
+        print(f"Done: {len(posts)} posts")
+    except requests.RequestException:
+        pass
+    except Exception:
+        pass
 
     return posts[:limit]

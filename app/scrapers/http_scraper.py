@@ -1,6 +1,5 @@
 """
-Scraper Reddit via API JSON
-Limite: ~1000 posts max
+Reddit HTTP Scraper
 """
 
 import requests
@@ -15,7 +14,6 @@ class HttpScraper:
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"
     }
 
-    # Liste des subreddits par crypto
     SUBREDDITS = {
         "bitcoin": "Bitcoin",
         "ethereum": "ethereum",
@@ -52,22 +50,14 @@ class HttpScraper:
         self.session.headers.update(self.HEADERS)
 
     def get_subreddit(self, crypto: str) -> str:
-        """Retourne le subreddit pour une crypto"""
         return self.SUBREDDITS.get(crypto.lower(), crypto)
 
     def list_cryptos(self) -> list:
-        """Liste des cryptos disponibles"""
         return list(self.SUBREDDITS.keys())
 
     def scrape_subreddit(self, subreddit: str, query: str = "", limit: int = 100) -> list:
-        """
-        Scrape un subreddit
-        limit: max 1000 (limite Reddit)
-        """
         posts = []
         after = None
-
-        # Reddit limite a 1000 posts
         limit = min(limit, 1000)
 
         while len(posts) < limit:
@@ -132,7 +122,6 @@ class HttpScraper:
             if not after:
                 break
 
-            # Pause pour eviter rate limit
             time.sleep(0.3)
 
         return posts
@@ -152,7 +141,7 @@ class HttpScraper:
             all_posts[crypto] = posts
 
             print(f"  -> {len(posts)} posts")
-            time.sleep(1)  # Pause entre chaque crypto
+            time.sleep(1)
 
         return all_posts
 

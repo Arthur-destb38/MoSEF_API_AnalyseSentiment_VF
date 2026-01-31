@@ -1,8 +1,8 @@
 """
-YouTube Scraper - Commentaires crypto historiques
-Utilise l'API YouTube Data v3 (gratuite: 10,000 unites/jour)
+YouTube Scraper
 """
 
+import os
 import time
 import random
 import re
@@ -15,9 +15,7 @@ try:
     YOUTUBE_API_OK = True
 except ImportError:
     YOUTUBE_API_OK = False
-    print("YouTube API: pip install google-api-python-client")
 
-# Alternative sans API: scraping direct
 try:
     from selenium import webdriver
     from selenium.webdriver.common.by import By
@@ -29,13 +27,8 @@ try:
 except ImportError:
     SELENIUM_OK = False
 
-# Limites
-LIMITS = {
-    "api": 500,      # Avec API key (limite quotidienne: ~10k requetes)
-    "selenium": 100  # Sans API, scraping direct
-}
+LIMITS = {"api": 500, "selenium": 100}
 
-# Videos crypto populaires pour bootstrap
 CRYPTO_CHANNELS = {
     "bitcoin": [
         "UCY0xL8V6NzzFcwzHCgB8orQ",  # BitcoinMagazine
@@ -50,7 +43,6 @@ CRYPTO_CHANNELS = {
     ]
 }
 
-# Mots-cles pour recherche
 CRYPTO_KEYWORDS = {
     "bitcoin": "Bitcoin BTC crypto",
     "ethereum": "Ethereum ETH crypto",
@@ -66,54 +58,34 @@ def get_limits():
 
 
 def human_delay(min_s=1, max_s=3):
-    """Delai aleatoire pour imiter comportement humain"""
     time.sleep(random.uniform(min_s, max_s))
 
-
-# ==================== METHODE 1: API YOUTUBE (RECOMMANDEE) ====================
 
 def scrape_youtube_api(
     query: str,
     limit: int = 50,
     api_key: str = None,
-    published_after: str = None,  # Format: 2020-01-01T00:00:00Z
+    published_after: str = None,
     published_before: str = None
 ) -> List[Dict]:
-    """
-    Scrape YouTube via l'API officielle (gratuite)
-    
-    Args:
-        query: Terme de recherche (ex: "Bitcoin price prediction")
-        limit: Nombre de commentaires souhaites
-        api_key: Cle API YouTube (gratuite sur Google Cloud Console)
-        published_after: Date debut ISO (ex: "2020-01-01T00:00:00Z")
-        published_before: Date fin ISO
-    
-    Returns:
-        Liste de commentaires avec metadata
-    """
     if not YOUTUBE_API_OK:
         print("YouTube API non disponible. Installez: pip install google-api-python-client")
         return []
     
     if not api_key:
-        import os
         api_key = os.environ.get("YOUTUBE_API_KEY")
     
     if not api_key:
-        print("YouTube: Cle API requise. Definissez YOUTUBE_API_KEY ou passez api_key=")
-        print("Obtenez une cle gratuite: https://console.cloud.google.com/apis/credentials")
         return scrape_youtube_selenium(query, min(limit, LIMITS["selenium"]))
     
     try:
         youtube = build('youtube', 'v3', developerKey=api_key)
         
-        # 1. Rechercher des videos
         search_params = {
             'q': query,
             'type': 'video',
             'part': 'id,snippet',
-            'maxResults': min(25, limit // 2),  # ~2 commentaires par video
+            'maxResults': min(25, limit // 2),
             'order': 'relevance',
             'relevanceLanguage': 'en'
         }
@@ -123,16 +95,12 @@ def scrape_youtube_api(
         if published_before:
             search_params['publishedBefore'] = published_before
         
-        print(f"YouTube API: Recherche videos pour '{query}'...")
         search_response = youtube.search().list(**search_params).execute()
-        
         video_ids = [item['id']['videoId'] for item in search_response.get('items', [])]
-        print(f"YouTube API: {len(video_ids)} videos trouvees")
         
         if not video_ids:
             return []
         
-        # 2. Recuperer les commentaires de chaque video
         all_comments = []
         comments_per_video = max(5, limit // len(video_ids))
         
@@ -143,14 +111,11 @@ def scrape_youtube_api(
             try:
                 comments = get_video_comments_api(youtube, video_id, comments_per_video, order='relevance')
                 all_comments.extend(comments)
-                print(f"  Video {video_id}: {len(comments)} commentaires")
                 human_delay(0.5, 1)
-            except HttpError as e:
-                if 'commentsDisabled' in str(e):
-                    print(f"  Video {video_id}: commentaires desactives")
+            except HttpError:
                 continue
         
-        print(f"YouTube API: Total {len(all_comments)} commentaires")
+        print(f"Done: {len(all_comments)} comments")
         return all_comments[:limit]
         
     except HttpError as e:
@@ -159,7 +124,6 @@ def scrape_youtube_api(
 
 
 def get_video_comments_api(youtube, video_id: str, limit: int, order: str = "relevance") -> List[Dict]:
-    """Recupere les commentaires d'une video via l'API avec pagination"""
     comments = []
     next_page_token = None
     
@@ -168,7 +132,7 @@ def get_video_comments_api(youtube, video_id: str, limit: int, order: str = "rel
             request = youtube.commentThreads().list(
                 part='snippet',
                 videoId=video_id,
-                maxResults=min(100, limit - len(comments)),  # Max 100 par requête
+                maxResults=min(100, limit - len(comments)),
                 order=order,
                 textFormat='plainText',
                 pageToken=next_page_token
@@ -186,7 +150,7 @@ def get_video_comments_api(youtube, video_id: str, limit: int, order: str = "rel
                     'id': item['id'],
                     'source': 'youtube',
                     'method': 'api',
-                    'title': snippet.get('textDisplay', '')[:500],  # Limite taille
+                    'title': snippet.get('textDisplay', '')[:500],
                     'text': snippet.get('textDisplay', ''),
                     'score': snippet.get('likeCount', 0),
                     'created_utc': snippet.get('publishedAt'),
@@ -200,42 +164,30 @@ def get_video_comments_api(youtube, video_id: str, limit: int, order: str = "rel
                 if len(comments) >= limit:
                     break
             
-            # Récupérer le token pour la page suivante
             next_page_token = response.get('nextPageToken')
             if not next_page_token:
                 break
             
-            # Petit délai pour éviter rate limiting
             time.sleep(0.1)
             
-    except HttpError as e:
-        if 'commentsDisabled' in str(e):
-            print(f"  Commentaires désactivés pour la vidéo {video_id}")
-        else:
-            print(f"Erreur commentaires video {video_id}: {e}")
-    except Exception as e:
-        print(f"Erreur commentaires video {video_id}: {e}")
+    except HttpError:
+        pass
+    except Exception:
+        pass
     
     return comments
 
 
-# ==================== METHODE 2: SELENIUM (SANS API) ====================
-
 def scrape_youtube_selenium(query: str, limit: int = 50) -> List[Dict]:
-    """
-    Scrape YouTube sans API via Selenium
-    Plus lent mais ne necessite pas de cle API
-    """
     if not SELENIUM_OK:
         print("Selenium non installe")
         return []
     
-    print(f"YouTube Selenium: Recherche '{query}'...")
+    print(f"Searching '{query}'...")
     
     comments = []
     seen_ids = set()
     
-    # Setup Chrome
     options = Options()
     options.add_argument('--headless')
     options.add_argument('--no-sandbox')
@@ -246,13 +198,10 @@ def scrape_youtube_selenium(query: str, limit: int = 50) -> List[Dict]:
     
     try:
         driver = webdriver.Chrome(options=options)
-        
-        # Recherche YouTube
         search_url = f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}"
         driver.get(search_url)
         human_delay(3, 5)
         
-        # Recuperer les liens des videos
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         video_links = []
         
@@ -263,9 +212,6 @@ def scrape_youtube_selenium(query: str, limit: int = 50) -> List[Dict]:
                 if len(video_links) >= 10:
                     break
         
-        print(f"YouTube Selenium: {len(video_links)} videos trouvees")
-        
-        # Scraper les commentaires de chaque video
         for video_path in video_links:
             if len(comments) >= limit:
                 break
@@ -273,38 +219,33 @@ def scrape_youtube_selenium(query: str, limit: int = 50) -> List[Dict]:
             video_url = f"https://www.youtube.com{video_path}"
             video_comments = scrape_video_comments_selenium(driver, video_url, seen_ids, limit - len(comments))
             comments.extend(video_comments)
-            print(f"  {video_path}: {len(video_comments)} commentaires")
         
         driver.quit()
         
-    except Exception as e:
-        print(f"YouTube Selenium Error: {e}")
+    except Exception:
+        pass
         try:
             driver.quit()
         except:
             pass
     
-    print(f"YouTube Selenium: Total {len(comments)} commentaires")
+    print(f"Done: {len(comments)} comments")
     return comments
 
 
 def scrape_video_comments_selenium(driver, video_url: str, seen_ids: set, limit: int) -> List[Dict]:
-    """Scrape les commentaires d'une video YouTube via Selenium"""
     comments = []
     
     try:
         driver.get(video_url)
         human_delay(4, 6)
         
-        # Scroll plusieurs fois pour charger les commentaires (YouTube lazy load)
         last_height = driver.execute_script("return document.documentElement.scrollHeight")
         
-        for scroll_attempt in range(8):  # Plus de scrolls
-            # Scroll down
+        for scroll_attempt in range(8):
             driver.execute_script("window.scrollTo(0, document.documentElement.scrollHeight);")
             human_delay(2, 3)
             
-            # Scroll up un peu puis down (trigger le chargement)
             driver.execute_script("window.scrollBy(0, -200);")
             human_delay(0.5, 1)
             driver.execute_script("window.scrollBy(0, 400);")
@@ -315,22 +256,14 @@ def scrape_video_comments_selenium(driver, video_url: str, seen_ids: set, limit:
                 break
             last_height = new_height
         
-        # Parser les commentaires
         soup = BeautifulSoup(driver.page_source, 'html.parser')
-        
-        # YouTube utilise plusieurs structures possibles
-        # Methode 1: ytd-comment-renderer
         comment_elements = soup.find_all('ytd-comment-renderer')
         
-        # Methode 2: chercher par ID content-text
         if not comment_elements:
             comment_elements = soup.find_all(id='content-text')
         
-        # Methode 3: chercher dans le HTML brut avec regex
         if not comment_elements:
-            import re
             page_text = driver.page_source
-            # Chercher les commentaires dans le JSON embarque
             comment_pattern = r'"contentText":\{"runs":\[\{"text":"([^"]+)"\}\]'
             matches = re.findall(comment_pattern, page_text)
             for match in matches[:limit]:
@@ -358,7 +291,6 @@ def scrape_video_comments_selenium(driver, video_url: str, seen_ids: set, limit:
                 break
             
             try:
-                # Extraire le texte du commentaire
                 if hasattr(elem, 'name') and elem.name == 'ytd-comment-renderer':
                     content_elem = elem.find('yt-formatted-string', {'id': 'content-text'})
                     text = content_elem.get_text(strip=True) if content_elem else ""
@@ -368,13 +300,11 @@ def scrape_video_comments_selenium(driver, video_url: str, seen_ids: set, limit:
                 if not text or len(text) < 5:
                     continue
                 
-                # ID unique
                 comment_id = hash(text)
                 if comment_id in seen_ids:
                     continue
                 seen_ids.add(comment_id)
                 
-                # Extraire les likes
                 likes = 0
                 if hasattr(elem, 'find'):
                     likes_elem = elem.find('span', {'id': 'vote-count-middle'})
@@ -386,14 +316,12 @@ def scrape_video_comments_selenium(driver, video_url: str, seen_ids: set, limit:
                             except:
                                 pass
                 
-                # Extraire l'auteur
                 author = ""
                 if hasattr(elem, 'find'):
                     author_elem = elem.find('a', {'id': 'author-text'})
                     if author_elem:
                         author = author_elem.get_text(strip=True)
                 
-                # Extraire la date
                 date_str = None
                 if hasattr(elem, 'find'):
                     date_elem = elem.find('yt-formatted-string', {'class': 'published-time-text'})
@@ -417,14 +345,13 @@ def scrape_video_comments_selenium(driver, video_url: str, seen_ids: set, limit:
             except Exception as e:
                 continue
                 
-    except Exception as e:
-        print(f"Erreur video {video_url}: {e}")
+    except Exception:
+        pass
     
     return comments
 
 
 def parse_youtube_number(text: str) -> int:
-    """Parse les nombres YouTube (ex: '1.2K' -> 1200)"""
     text = text.strip().upper()
     if not text:
         return 0
@@ -442,41 +369,19 @@ def parse_youtube_number(text: str) -> int:
         return 0
 
 
-# ==================== FONCTION PRINCIPALE ====================
-
 def scrape_youtube(
     query: str,
     limit: int = 50,
     method: str = "auto",
     api_key: str = None,
-    start_date: str = None,  # Format: YYYY-MM-DD
+    start_date: str = None,
     end_date: str = None,
-    video_url: str = None,   # URL specifique d'une video
-    order: str = "relevance"  # relevance ou time
+    video_url: str = None,
+    order: str = "relevance"
 ) -> List[Dict]:
-    """
-    Fonction principale pour scraper YouTube
-    
-    Args:
-        query: Terme de recherche
-        limit: Nombre de commentaires
-        method: "api", "selenium", ou "auto"
-        api_key: Cle API YouTube (optionnel)
-        start_date: Date debut (YYYY-MM-DD)
-        end_date: Date fin (YYYY-MM-DD)
-        video_url: URL d'une video specifique (optionnel)
-        order: Tri des commentaires (relevance/time)
-    
-    Returns:
-        Liste de commentaires
-    """
-    import os
-    
-    # Si URL video specifique fournie, scraper directement cette video
     if video_url:
         return scrape_single_video(video_url, limit, api_key, order)
     
-    # Convertir dates au format ISO si fournies
     published_after = None
     published_before = None
     
@@ -485,7 +390,6 @@ def scrape_youtube(
     if end_date:
         published_before = f"{end_date}T23:59:59Z"
     
-    # Choisir la methode
     if method == "auto":
         if api_key or os.environ.get("YOUTUBE_API_KEY"):
             method = "api"
@@ -505,19 +409,6 @@ def scrape_youtube(
 
 
 def scrape_single_video(video_url: str, limit: int = 100, api_key: str = None, order: str = "relevance") -> List[Dict]:
-    """
-    Scrape les commentaires d'une video YouTube specifique
-    
-    Args:
-        video_url: URL de la video (ex: https://youtube.com/watch?v=xxxxx)
-        limit: Nombre max de commentaires
-        api_key: Cle API YouTube
-        order: Tri (relevance ou time)
-    """
-    import os
-    import re
-    
-    # Extraire video_id de l'URL
     video_id = None
     patterns = [
         r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)([a-zA-Z0-9_-]{11})',
@@ -531,29 +422,20 @@ def scrape_single_video(video_url: str, limit: int = 100, api_key: str = None, o
             break
     
     if not video_id:
-        print(f"YouTube: Impossible d'extraire video_id de {video_url}")
         return []
     
-    print(f"YouTube: Scraping video {video_id}...")
-    
-    # Utiliser API si disponible
     if not api_key:
         api_key = os.environ.get("YOUTUBE_API_KEY")
     
     if api_key and YOUTUBE_API_OK:
         try:
             youtube = build('youtube', 'v3', developerKey=api_key)
-            
-            # Info video
             video_info = youtube.videos().list(part='snippet,statistics', id=video_id).execute()
             video_title = ""
             if video_info.get('items'):
                 v = video_info['items'][0]
                 video_title = v['snippet'].get('title', '')
-                print(f"  Titre: {video_title[:50]}...")
-                print(f"  Commentaires: {v['statistics'].get('commentCount', 'N/A')}")
             
-            # Recuperer commentaires
             comments = []
             next_page = None
             
@@ -591,23 +473,15 @@ def scrape_single_video(video_url: str, limit: int = 100, api_key: str = None, o
                     if not next_page:
                         break
                         
-                except HttpError as e:
-                    if 'commentsDisabled' in str(e):
-                        print(f"  Commentaires desactives pour cette video")
-                    else:
-                        print(f"  Erreur API: {e}")
+                except HttpError:
                     break
             
-            print(f"YouTube: {len(comments)} commentaires recuperes")
             return comments
             
-        except Exception as e:
-            print(f"YouTube API Error: {e}")
+        except Exception:
             return []
     
     else:
-        # Fallback Selenium
-        print("YouTube: API non disponible, utilisation Selenium...")
         if SELENIUM_OK:
             seen_ids = set()
             options = Options()
@@ -621,20 +495,14 @@ def scrape_single_video(video_url: str, limit: int = 100, api_key: str = None, o
                 comments = scrape_video_comments_selenium(driver, video_url, seen_ids, limit)
                 driver.quit()
                 return comments
-            except Exception as e:
-                print(f"Selenium Error: {e}")
+            except Exception:
                 return []
         
         return []
 
 
-# ==================== TEST ====================
-
 if __name__ == "__main__":
     print("Test YouTube Scraper")
-    print("=" * 50)
-    
-    # Test sans API (Selenium)
     comments = scrape_youtube("Bitcoin price analysis", limit=20, method="selenium")
     
     print(f"\nResultats: {len(comments)} commentaires")

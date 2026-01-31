@@ -9,15 +9,21 @@ from datetime import datetime
 from typing import Optional
 
 try:
+    from selenium import webdriver
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.chrome.options import Options
+    from selenium.common.exceptions import NoSuchElementException
+    from bs4 import BeautifulSoup
+    SELENIUM_OK = True
+except ImportError:
+    SELENIUM_OK = False
+
+try:
     from app.storage import save_posts
 except Exception:
     save_posts = None
 
-# Limites pour eviter le ban
-LIMITS = {
-    "http": 1000,      # Reddit JSON API limite a ~1000 posts
-    "selenium": 200    # Plus lent, limite pour eviter detection
-}
+LIMITS = {"http": 1000, "selenium": 200}
 
 
 def filter_posts_by_date(posts: list, start_date: Optional[str] = None, end_date: Optional[str] = None) -> list:
@@ -34,12 +40,10 @@ def filter_posts_by_date(posts: list, start_date: Optional[str] = None, end_date
         if not created_utc:
             continue
         
-        # Convertir timestamp Unix en datetime
         try:
             if isinstance(created_utc, (int, float)):
                 post_dt = datetime.fromtimestamp(created_utc)
             elif isinstance(created_utc, str):
-                # Essayer de parser comme ISO string ou timestamp
                 try:
                     post_dt = datetime.fromisoformat(created_utc.replace('Z', '+00:00'))
                 except:
@@ -47,7 +51,6 @@ def filter_posts_by_date(posts: list, start_date: Optional[str] = None, end_date
             else:
                 continue
             
-            # Filtrer
             if start_dt and post_dt.date() < start_dt.date():
                 continue
             if end_dt and post_dt.date() > end_dt.date():
@@ -66,12 +69,10 @@ def scrape_reddit_http(subreddit: str, limit: int = 100, start_date: Optional[st
     after = None
     headers = {"User-Agent": "Mozilla/5.0 Chrome/120.0.0.0"}
     
-    # Augmenter la limite si on filtre par date (on récupère plus puis on filtre)
     fetch_limit = limit * 2 if (start_date or end_date) else limit
     fetch_limit = min(fetch_limit, LIMITS["http"])
     
     page = 0
-    # Essayer old.reddit.com puis www.reddit.com en fallback (DNS/réseau)
     base_hosts = ["https://old.reddit.com", "https://www.reddit.com"]
     base = base_hosts[0]
 
@@ -86,7 +87,6 @@ def scrape_reddit_http(subreddit: str, limit: int = 100, start_date: Optional[st
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
-            # Fallback: réessayer avec www.reddit.com si old échoue (DNS/réseau)
             if base == base_hosts[0]:
                 base = base_hosts[1]
                 print(f"Fallback Reddit: old.reddit.com → www.reddit.com")
@@ -96,7 +96,6 @@ def scrape_reddit_http(subreddit: str, limit: int = 100, start_date: Optional[st
         
         children = data.get("data", {}).get("children", [])
         if not children:
-            print(f"Reddit: Plus de posts disponibles (page {page})")
             break
         
         page_posts = 0
@@ -116,41 +115,29 @@ def scrape_reddit_http(subreddit: str, limit: int = 100, start_date: Optional[st
             if len(posts) >= fetch_limit:
                 break
         
-        print(f"Reddit: Page {page + 1} - {page_posts} posts (total: {len(posts)}/{limit})")
+        print(f"Page {page + 1}: {len(posts)} posts")
         
         after = data.get("data", {}).get("after")
         if not after:
-            print(f"Reddit: Fin de pagination atteinte")
             break
         
         page += 1
         time.sleep(0.3)
     
-    # Filtrer par date si nécessaire
     posts = filter_posts_by_date(posts, start_date, end_date)
-    
-    # Limiter au nombre demandé
     return posts[:limit]
 
 
 def scrape_reddit_selenium(subreddit: str, limit: int = 100, start_date: Optional[str] = None, end_date: Optional[str] = None) -> list:
     """Scrape Reddit via Selenium (simule navigateur)"""
-    try:
-        from selenium import webdriver
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.chrome.options import Options
-        from selenium.common.exceptions import NoSuchElementException
-        from bs4 import BeautifulSoup
-    except ImportError:
+    if not SELENIUM_OK:
         print("Selenium non installe")
         return []
     
-    # Augmenter la limite si on filtre par date
     fetch_limit = limit * 2 if (start_date or end_date) else limit
     fetch_limit = min(fetch_limit, LIMITS["selenium"])
     posts = []
     
-    # Config Chrome
     options = Options()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
@@ -173,7 +160,7 @@ def scrape_reddit_selenium(subreddit: str, limit: int = 100, start_date: Optiona
     
     try:
         url = f"https://old.reddit.com/r/{subreddit}/new/"
-        print(f"Selenium: Loading {url}...")
+        print(f"Loading {url}")
         driver.get(url)
         time.sleep(random.uniform(2, 4))
         
@@ -181,13 +168,11 @@ def scrape_reddit_selenium(subreddit: str, limit: int = 100, start_date: Optiona
         max_pages = (limit // 25) + 2
         
         while len(posts) < fetch_limit and pages < max_pages:
-            # Scroll
             for _ in range(2):
                 px = random.randint(300, 600)
                 driver.execute_script(f"window.scrollBy(0, {px});")
                 time.sleep(random.uniform(0.5, 1.0))
             
-            # Parse HTML
             soup = BeautifulSoup(driver.page_source, "lxml")
             elements = soup.select("div.thing.link")
             
@@ -229,7 +214,6 @@ def scrape_reddit_selenium(subreddit: str, limit: int = 100, start_date: Optiona
                 if len(posts) >= limit:
                     break
             
-            # Page suivante
             try:
                 next_btn = driver.find_element(By.CSS_SELECTOR, "span.next-button a")
                 next_btn.click()
@@ -238,17 +222,14 @@ def scrape_reddit_selenium(subreddit: str, limit: int = 100, start_date: Optiona
             except NoSuchElementException:
                 break
         
-        print(f"Selenium: {len(posts)} posts scraped")
+        print(f"Done: {len(posts)} posts")
         
     except Exception as e:
         print(f"Erreur Selenium Reddit: {e}")
     finally:
         driver.quit()
     
-    # Filtrer par date si nécessaire
     posts = filter_posts_by_date(posts, start_date, end_date)
-    
-    # Limiter au nombre demandé
     return posts[:limit]
 
 

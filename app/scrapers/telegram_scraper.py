@@ -1,51 +1,33 @@
 """
-Telegram Public Channel Scraper
-Sans API / Sans compte dev - Méthode web scraping
-
-Pour le projet Crypto Sentiment API - MoSEF
+Telegram Scraper
 """
 
 import requests
 from bs4 import BeautifulSoup
 import time
 import re
-from datetime import datetime
-from typing import Optional
+import random
 import logging
+from datetime import datetime
+from typing import Optional, List
+
+from fastapi import APIRouter, Query
+from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# ============ CHANNELS CRYPTO POPULAIRES ============
-
 CRYPTO_CHANNELS = {
-    # News & Actualités
     "bitcoinnews": "Bitcoin News",
     "cryptonewscom": "CryptoNews",
-    
-    # Whale Alerts
-    "whale_alert_io": "Whale Alert - Gros mouvements",
-    
-    # Communautés officielles
+    "whale_alert_io": "Whale Alert",
     "Bitcoin": "Bitcoin Official",
     "ethereum": "Ethereum",
 }
 
 
-# ============ MÉTHODE 1: REQUESTS SIMPLE ============
-
 def scrape_telegram_simple(channel: str, limit: int = 30) -> list[dict]:
-    """
-    Scrape basique avec requests - ~20-30 messages max
-    
-    Args:
-        channel: Nom du channel (sans @)
-        limit: Nombre max de messages (plafonné à ~30)
-    
-    Returns:
-        Liste de messages avec text, date approximative, channel
-    """
     url = f"https://t.me/s/{channel}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -61,13 +43,10 @@ def scrape_telegram_simple(channel: str, limit: int = 30) -> list[dict]:
     
     soup = BeautifulSoup(response.text, 'html.parser')
     messages = []
-    
-    # Trouver tous les messages
     message_wraps = soup.find_all('div', class_='tgme_widget_message_wrap')
     
     for wrap in message_wraps[:limit]:
         try:
-            # Texte du message
             text_div = wrap.find('div', class_='tgme_widget_message_text')
             if not text_div:
                 continue
@@ -76,13 +55,11 @@ def scrape_telegram_simple(channel: str, limit: int = 30) -> list[dict]:
             if not text or len(text) < 5:
                 continue
             
-            # Date du message
             time_tag = wrap.find('time', class_='time')
             date_str = None
             if time_tag and time_tag.get('datetime'):
                 date_str = time_tag['datetime']
             
-            # Vues
             views_span = wrap.find('span', class_='tgme_widget_message_views')
             views = 0
             if views_span:
@@ -101,28 +78,11 @@ def scrape_telegram_simple(channel: str, limit: int = 30) -> list[dict]:
             logger.warning(f"Erreur parsing message: {e}")
             continue
     
-    logger.info(f"[{channel}] {len(messages)} messages récupérés (méthode simple)")
+    logger.info(f"[{channel}] {len(messages)} messages")
     return messages
 
 
-# ============ MÉTHODE 2: AVEC PAGINATION (AJAX) ============
-
 def scrape_telegram_paginated(channel: str, max_messages: int = 200, start_date: str = None, end_date: str = None) -> list[dict]:
-    """
-    Scrape avec pagination AJAX - jusqu'à plusieurs milliers de messages
-    
-    Telegram charge les anciens messages via des requêtes AJAX
-    quand on scroll. On simule ça avec le paramètre 'before'.
-    
-    Args:
-        channel: Nom du channel
-        max_messages: Nombre max de messages à récupérer (peut aller jusqu'à 5000+)
-        start_date: Date de début (format: "YYYY-MM-DD") - optionnel
-        end_date: Date de fin (format: "YYYY-MM-DD") - optionnel
-    
-    Returns:
-        Liste de messages
-    """
     base_url = f"https://t.me/s/{channel}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -134,12 +94,10 @@ def scrape_telegram_paginated(channel: str, max_messages: int = 200, start_date:
     all_messages = []
     before_id = None
     page = 0
-    # Augmenter le nombre max de pages pour récupérer plus de messages
-    max_pages = (max_messages // 20) + 50  # Plus de marge pour la pagination
+    max_pages = (max_messages // 20) + 50
     consecutive_empty = 0
     
     while len(all_messages) < max_messages and page < max_pages:
-        # Construire l'URL avec pagination
         if before_id:
             url = f"{base_url}?before={before_id}"
         else:
@@ -156,17 +114,6 @@ def scrape_telegram_paginated(channel: str, max_messages: int = 200, start_date:
         message_wraps = soup.find_all('div', class_='tgme_widget_message_wrap')
         
         if not message_wraps:
-            # Vérifier si c'est la première page et qu'il n'y a pas de messages
-            if page == 0:
-                # Vérifier si le canal existe ou est privé
-                if 'doesn\'t exist' in response.text.lower() or 'doesn\'t exist' in response.text:
-                    logger.error(f"[{channel}] Canal n'existe pas")
-                elif 'private' in response.text.lower() or 'Private' in response.text:
-                    logger.error(f"[{channel}] Canal privé - impossible de scraper")
-                else:
-                    logger.warning(f"[{channel}] Aucun message trouvé - canal peut-être vide ou structure différente")
-            else:
-                logger.info(f"[{channel}] Plus de messages après page {page}")
             break
         
         new_messages = 0
@@ -174,14 +121,11 @@ def scrape_telegram_paginated(channel: str, max_messages: int = 200, start_date:
         
         for wrap in message_wraps:
             try:
-                # Récupérer l'ID du message pour la pagination
                 msg_div = wrap.find('div', class_='tgme_widget_message')
                 if msg_div and msg_div.get('data-post'):
                     post_id = msg_div['data-post'].split('/')[-1]
-                    # Garder le dernier ID trouvé (le message le plus ancien de la page)
                     oldest_id = post_id
                 
-                # Texte
                 text_div = wrap.find('div', class_='tgme_widget_message_text')
                 if not text_div:
                     continue
@@ -190,7 +134,6 @@ def scrape_telegram_paginated(channel: str, max_messages: int = 200, start_date:
                 if not text or len(text) < 5:
                     continue
                 
-                # Éviter les doublons (par ID si disponible, sinon par texte)
                 message_id = None
                 if msg_div and msg_div.get('data-post'):
                     message_id = msg_div['data-post']
@@ -200,13 +143,11 @@ def scrape_telegram_paginated(channel: str, max_messages: int = 200, start_date:
                     if any(m.get('text') == text for m in all_messages):
                         continue
                 
-                # Date
                 time_tag = wrap.find('time', class_='time')
                 date_str = None
                 if time_tag and time_tag.get('datetime'):
                     date_str = time_tag['datetime']
                 
-                # Filtrer par date si spécifié
                 if start_date or end_date:
                     if date_str:
                         msg_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
@@ -217,15 +158,12 @@ def scrape_telegram_paginated(channel: str, max_messages: int = 200, start_date:
                         if end_date:
                             end = datetime.fromisoformat(end_date)
                             if msg_date.date() > end.date():
-                                # Si on dépasse la date de fin, on peut arrêter
                                 if msg_date.date() > end.date():
-                                    consecutive_empty = 999  # Force l'arrêt
+                                    consecutive_empty = 999
                                     break
                     else:
-                        # Si pas de date et qu'on filtre par date, on skip
                         continue
                 
-                # Vues
                 views_span = wrap.find('span', class_='tgme_widget_message_views')
                 views = parse_views(views_span.get_text(strip=True)) if views_span else 0
                 
@@ -243,65 +181,41 @@ def scrape_telegram_paginated(channel: str, max_messages: int = 200, start_date:
                 logger.debug(f"Erreur parsing message: {e}")
                 continue
         
-        logger.info(f"[{channel}] Page {page + 1}: +{new_messages} messages (total: {len(all_messages)}/{max_messages})")
         
         if new_messages == 0:
             consecutive_empty += 1
-            if consecutive_empty >= 3:  # 3 pages vides consécutives = arrêt
-                logger.info(f"[{channel}] {consecutive_empty} pages vides consécutives, arrêt de la pagination")
+            if consecutive_empty >= 3:
                 break
         else:
             consecutive_empty = 0
         
         if not oldest_id:
-            logger.info(f"[{channel}] Impossible de trouver l'ID du message le plus ancien, arrêt")
             break
         
         before_id = oldest_id
         page += 1
         
-        # Rate limiting adaptatif : plus lent si beaucoup de pages
         if page % 10 == 0:
-            time.sleep(2)  # Pause plus longue tous les 10 pages
+            time.sleep(2)
         else:
-            time.sleep(0.8)  # Pause normale
-    
-    if len(all_messages) == 0 and page == 0:
-        # Si aucun message récupéré sur la première page, vérifier le canal
-        logger.warning(f"[{channel}] Aucun message récupéré. Le canal peut être:")
-        logger.warning(f"  - Privé (nécessite d'être membre)")
-        logger.warning(f"  - Vide (pas de messages publics)")
-        logger.warning(f"  - Inexistant ou nom incorrect")
-        logger.warning(f"  - Structure HTML différente")
+            time.sleep(0.8)
     
     return all_messages[:max_messages]
 
 
-# ============ MÉTHODE 3: SELENIUM (POUR PLUS DE MESSAGES) ============
+try:
+    from selenium import webdriver
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    SELENIUM_OK = True
+except ImportError:
+    SELENIUM_OK = False
+
 
 def scrape_telegram_selenium(channel: str, max_messages: int = 1000, start_date: str = None, end_date: str = None) -> list[dict]:
-    """
-    Scrape Telegram avec Selenium pour récupérer beaucoup plus de messages
-    Utile pour récupérer des milliers de messages historiques
-    
-    Args:
-        channel: Nom du channel
-        max_messages: Nombre max de messages (peut aller jusqu'à 5000+)
-        start_date: Date de début (format: "YYYY-MM-DD") - optionnel
-        end_date: Date de fin (format: "YYYY-MM-DD") - optionnel
-    
-    Returns:
-        Liste de messages
-    """
-    try:
-        from selenium import webdriver
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.chrome.options import Options
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
-        import random
-    except ImportError:
-        logger.error("Selenium non installé. Utilisez scrape_telegram_paginated à la place.")
+    if not SELENIUM_OK:
         return scrape_telegram_paginated(channel, max_messages, start_date, end_date)
     
     options = Options()
@@ -318,26 +232,23 @@ def scrape_telegram_selenium(channel: str, max_messages: int = 1000, start_date:
     try:
         driver = webdriver.Chrome(options=options)
         url = f"https://t.me/s/{channel}"
-        logger.info(f"Selenium: Chargement {url}...")
+        logger.info(f"Loading {url}")
         driver.get(url)
         time.sleep(3)
         
         last_height = driver.execute_script("return document.body.scrollHeight")
         scroll_attempts = 0
-        max_scrolls = (max_messages // 20) + 100  # Plus de scrolls pour plus de messages
+        max_scrolls = (max_messages // 20) + 100
         no_new_messages = 0
         
         while len(all_messages) < max_messages and scroll_attempts < max_scrolls:
-            # Scroll vers le haut pour charger les anciens messages
             driver.execute_script("window.scrollTo(0, 0);")
             time.sleep(random.uniform(1, 2))
             
-            # Scroll progressif vers le bas
             for i in range(5):
                 driver.execute_script(f"window.scrollBy(0, {random.randint(300, 600)});")
                 time.sleep(random.uniform(0.3, 0.6))
             
-            # Parser les messages
             soup = BeautifulSoup(driver.page_source, 'html.parser')
             message_wraps = soup.find_all('div', class_='tgme_widget_message_wrap')
             
@@ -360,13 +271,11 @@ def scrape_telegram_selenium(channel: str, max_messages: int = 1000, start_date:
                     if not text or len(text) < 5:
                         continue
                     
-                    # Date
                     time_tag = wrap.find('time', class_='time')
                     date_str = None
                     if time_tag and time_tag.get('datetime'):
                         date_str = time_tag['datetime']
                     
-                    # Filtrer par date
                     if start_date or end_date:
                         if date_str:
                             msg_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
@@ -400,14 +309,11 @@ def scrape_telegram_selenium(channel: str, max_messages: int = 1000, start_date:
             
             if new_count > 0:
                 no_new_messages = 0
-                logger.info(f"[{channel}] Scroll {scroll_attempts + 1}: +{new_count} messages (total: {len(all_messages)}/{max_messages})")
             else:
                 no_new_messages += 1
                 if no_new_messages >= 5:
-                    logger.info(f"[{channel}] Plus de nouveaux messages après {scroll_attempts} scrolls")
                     break
             
-            # Vérifier si on peut scroller plus
             new_height = driver.execute_script("return document.body.scrollHeight")
             if new_height == last_height:
                 no_new_messages += 1
@@ -419,12 +325,11 @@ def scrape_telegram_selenium(channel: str, max_messages: int = 1000, start_date:
             
             scroll_attempts += 1
             
-            # Pause anti-ban
             if scroll_attempts % 20 == 0:
                 time.sleep(random.uniform(3, 5))
         
         driver.quit()
-        logger.info(f"[{channel}] Selenium: Total {len(all_messages)} messages récupérés")
+        logger.info(f"[{channel}] Done: {len(all_messages)} messages")
         
     except Exception as e:
         logger.error(f"Erreur Selenium Telegram: {e}")
@@ -436,24 +341,11 @@ def scrape_telegram_selenium(channel: str, max_messages: int = 1000, start_date:
     return all_messages[:max_messages]
 
 
-# ============ MÉTHODE 4: MULTI-CHANNEL ============
-
 def scrape_multiple_channels(
     channels: list[str] = None,
     messages_per_channel: int = 100,
     use_pagination: bool = True
 ) -> dict:
-    """
-    Scrape plusieurs channels d'un coup
-    
-    Args:
-        channels: Liste de channels (défaut: CRYPTO_CHANNELS)
-        messages_per_channel: Messages par channel
-        use_pagination: Utiliser la pagination pour plus de messages
-    
-    Returns:
-        Dict avec stats et tous les messages
-    """
     if channels is None:
         channels = list(CRYPTO_CHANNELS.keys())
     
@@ -468,8 +360,7 @@ def scrape_multiple_channels(
         messages = scrape_func(channel, messages_per_channel)
         stats[channel] = len(messages)
         all_data.extend(messages)
-        
-        time.sleep(2)  # Pause entre channels
+        time.sleep(2)
     
     return {
         "status": "success",
@@ -480,23 +371,15 @@ def scrape_multiple_channels(
     }
 
 
-# ============ HELPERS ============
-
 def clean_text(text: str) -> str:
-    """Nettoie le texte pour l'analyse de sentiment"""
-    # Supprimer les URLs
     text = re.sub(r'http\S+|www\.\S+', '', text)
-    # Supprimer les mentions
     text = re.sub(r'@\w+', '', text)
-    # Supprimer les emojis excessifs (garder quelques-uns)
     text = re.sub(r'[\U0001F600-\U0001F64F]{3,}', '', text)
-    # Nettoyer les espaces
     text = ' '.join(text.split())
     return text.strip()
 
 
 def parse_views(views_str: str) -> int:
-    """Parse '1.2K' ou '5M' en nombre"""
     if not views_str:
         return 0
     
@@ -513,30 +396,17 @@ def parse_views(views_str: str) -> int:
         return 0
 
 
-# ============ FASTAPI INTEGRATION ============
+class TelegramScrapeRequest(BaseModel):
+    channels: Optional[list[str]] = None
+    limit: int = 50
+    use_pagination: bool = True
+
 
 def get_fastapi_router():
-    """
-    Retourne un router FastAPI prêt à intégrer
-    
-    Usage dans ton main.py:
-        from telegram_scraper import get_fastapi_router
-        app.include_router(get_fastapi_router(), prefix="/telegram", tags=["Telegram"])
-    """
-    from fastapi import APIRouter, Query
-    from pydantic import BaseModel
-    from typing import Optional
-    
     router = APIRouter()
-    
-    class TelegramScrapeRequest(BaseModel):
-        channels: Optional[list[str]] = None
-        limit: int = 50
-        use_pagination: bool = True
     
     @router.get("/channels")
     def list_channels():
-        """Liste les channels crypto disponibles"""
         return {
             "channels": CRYPTO_CHANNELS,
             "count": len(CRYPTO_CHANNELS)
@@ -547,7 +417,6 @@ def get_fastapi_router():
         channel: str,
         limit: int = Query(default=50, ge=1, le=500)
     ):
-        """Scrape un channel spécifique"""
         if limit > 30:
             messages = scrape_telegram_paginated(channel, limit)
         else:
@@ -562,7 +431,6 @@ def get_fastapi_router():
     
     @router.post("/scrape")
     def scrape_channels(request: TelegramScrapeRequest):
-        """Scrape plusieurs channels"""
         return scrape_multiple_channels(
             channels=request.channels,
             messages_per_channel=request.limit,
@@ -572,26 +440,18 @@ def get_fastapi_router():
     return router
 
 
-# ============ MAIN / TEST ============
-
 if __name__ == "__main__":
-    print("=" * 50)
     print("TEST TELEGRAM SCRAPER")
-    print("=" * 50)
-    
-    # Test simple
-    print("\n[TEST 1] Méthode simple - whale_alert_io")
+    print("\n[TEST 1] simple - whale_alert_io")
     messages = scrape_telegram_simple("whale_alert_io", limit=10)
     for msg in messages[:3]:
         print(f"  - {msg['text'][:80]}...")
     
-    # Test pagination
-    print("\n[TEST 2] Méthode paginée - CoinMarketCapAnnouncements")
+    print("\n[TEST 2] paginated - bitcoinnews")
     messages = scrape_telegram_paginated("bitcoinnews", max_messages=50)
     print(f"  Total: {len(messages)} messages")
     
-    # Test multi-channel
-    print("\n[TEST 3] Multi-channels")
+    print("\n[TEST 3] multi-channels")
     result = scrape_multiple_channels(
         channels=["whale_alert_io", "bitcoinnews"],
         messages_per_channel=30

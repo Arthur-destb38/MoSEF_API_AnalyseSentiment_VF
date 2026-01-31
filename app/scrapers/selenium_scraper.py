@@ -1,6 +1,5 @@
 """
-Scraper Reddit avec Selenium (methode cours)
-Simule un comportement humain
+Reddit Selenium Scraper
 """
 
 from selenium import webdriver

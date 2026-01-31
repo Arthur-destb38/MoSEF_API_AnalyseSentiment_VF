@@ -1,6 +1,5 @@
 """
-GitHub Discussions Scraper - Discussions sur projets crypto
-Utilise l'API GitHub officielle (gratuite, 5000 requêtes/heure)
+GitHub Scraper
 """
 
 import requests
@@ -9,11 +8,8 @@ from datetime import datetime
 from typing import List, Dict, Optional
 import os
 
-LIMITS = {
-    "api": 200  # Limite raisonnable pour éviter rate limits
-}
+LIMITS = {"api": 200}
 
-# Repos crypto populaires avec discussions actives
 CRYPTO_REPOS = {
     "bitcoin": [
         {"owner": "bitcoin", "repo": "bitcoin"},
@@ -42,26 +38,10 @@ def get_limits():
 
 
 def scrape_github_discussions(query: str = "bitcoin", limit: int = 50) -> List[Dict]:
-    """
-    Scrape GitHub Issues (les discussions ne sont pas toujours activées)
-    Utilise Issues par défaut, plus fiable
-    
-    Args:
-        query: Mot-clé de recherche (ex: "bitcoin", "ethereum")
-        limit: Nombre de discussions souhaitées
-    
-    Returns:
-        Liste de discussions/issues avec texte et métriques
-    """
-    # Utiliser Issues par défaut (plus fiable)
     return scrape_github_issues(query, limit)
 
 
 def scrape_github_issues(query: str = "bitcoin", limit: int = 50) -> List[Dict]:
-    """
-    Scrape GitHub Issues (alternative aux discussions)
-    Certains repos utilisent Issues au lieu de Discussions
-    """
     posts = []
     seen_ids = set()
     
@@ -79,7 +59,6 @@ def scrape_github_issues(query: str = "bitcoin", limit: int = 50) -> List[Dict]:
         query_lower = query.lower()
         repos = CRYPTO_REPOS.get(query_lower, CRYPTO_REPOS.get("crypto", []))
         
-        print(f"GitHub: Scraping issues pour '{query}'...")
         
         for repo_info in repos:
             if len(posts) >= limit:
@@ -163,9 +142,9 @@ def scrape_github_issues(query: str = "bitcoin", limit: int = 50) -> List[Dict]:
             except Exception as e:
                 continue
         
-        print(f"✅ GitHub: {len(posts)} issues récupérées")
+        print(f"Done: {len(posts)} issues")
         
-    except Exception as e:
-        print(f"❌ Erreur GitHub Issues: {e}")
+    except Exception:
+        pass
     
     return posts[:limit]

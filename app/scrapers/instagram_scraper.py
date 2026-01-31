@@ -1,15 +1,11 @@
 """
-Instagram Scraper - Instaloader (recommandé) + Selenium (fallback)
-
-Instaloader est la méthode la plus fiable pour scraper Instagram.
-Nécessite souvent un login pour éviter les rate limits.
+Instagram Scraper
 """
 
 import time
 from datetime import datetime
 from typing import Optional
 
-# Essayer Instaloader d'abord
 INSTALOADER_OK = False
 try:
     import instaloader
@@ -17,7 +13,6 @@ try:
 except ImportError:
     INSTALOADER_OK = False
 
-# Fallback Selenium
 SELENIUM_OK = False
 try:
     from selenium import webdriver
@@ -30,47 +25,26 @@ try:
 except ImportError:
     SELENIUM_OK = False
 
-LIMITS = {
-    "instaloader": 100,  # Limite recommandée pour éviter ban
-    "selenium": 50       # Plus restrictif avec Selenium
-}
+LIMITS = {"instaloader": 100, "selenium": 50}
 
 
 def get_limits():
-    """Retourne les limites par méthode"""
     return LIMITS
 
 
 def scrape_instagram_hashtag(hashtag: str, limit: int = 50, username: str = None, password: str = None) -> list:
-    """
-    Scrape Instagram via hashtag (ex: #bitcoin, #crypto)
-    
-    Args:
-        hashtag: Hashtag à scraper (sans le #)
-        limit: Nombre de posts souhaités
-        username: Username Instagram (optionnel, recommandé pour éviter rate limits)
-        password: Password Instagram (optionnel)
-    
-    Returns:
-        Liste de posts Instagram
-    """
     if INSTALOADER_OK:
         return scrape_instagram_instaloader(hashtag, limit, username, password)
     elif SELENIUM_OK:
         return scrape_instagram_selenium(hashtag, limit)
     else:
-        print("❌ Instaloader et Selenium non disponibles. Installe avec: pip install instaloader")
         return []
 
 
 def scrape_instagram_instaloader(hashtag: str, limit: int, username: str = None, password: str = None) -> list:
-    """
-    Scrape Instagram avec Instaloader (méthode recommandée)
-    """
     posts = []
     
     try:
-        # Créer l'instance Instaloader avec session
         L = instaloader.Instaloader(
             download_pictures=False,
             download_videos=False,
@@ -82,76 +56,41 @@ def scrape_instagram_instaloader(hashtag: str, limit: int, username: str = None,
             max_connection_attempts=3
         )
         
-        # Login si credentials fournis (OBLIGATOIRE depuis 2024)
         if username and password:
             try:
-                print(f"Instagram: Connexion avec {username}...")
-                # Essayer de charger une session existante d'abord
                 try:
                     L.load_session_from_file(username)
-                    print("✅ Instagram: Session existante chargée!")
                 except FileNotFoundError:
-                    # Pas de session, faire un login
                     L.login(username, password)
-                    # Sauvegarder la session pour la prochaine fois
                     L.save_session_to_file()
-                    print("✅ Instagram: Connexion réussie et session sauvegardée!")
             except instaloader.exceptions.TwoFactorAuthRequiredException:
-                print("❌ Instagram: 2FA activé - entrez le code dans le terminal")
                 code = input("Code 2FA: ")
                 try:
                     L.two_factor_login(code)
                     L.save_session_to_file()
-                    print("✅ Instagram: Connexion 2FA réussie!")
-                except Exception as e2:
-                    print(f"❌ Instagram: Échec 2FA: {e2}")
+                except Exception:
                     return []
             except instaloader.exceptions.BadCredentialsException:
-                print("❌ Instagram: Identifiants incorrects")
                 return []
-            except instaloader.exceptions.ConnectionException as e:
-                print(f"❌ Instagram: Erreur de connexion: {e}")
-                print("   Vérifiez votre connexion internet")
+            except instaloader.exceptions.ConnectionException:
                 return []
-            except Exception as e:
-                print(f"❌ Instagram: Échec login: {e}")
-                print("   Causes possibles:")
-                print("   - Compte bloqué temporairement")
-                print("   - 2FA activé (non géré automatiquement)")
-                print("   - Instagram détecte l'automatisation")
-                print("   - Identifiants incorrects")
+            except Exception:
                 return []
         else:
-            print("⚠️  Instagram: Pas de login fourni")
-            print("   Instagram exige maintenant un login pour scraper les hashtags")
-            print("   Ajoute INSTAGRAM_USERNAME et INSTAGRAM_PASSWORD dans .env")
             return []
         
-        # Vérifier que la session est active en testant le profil
         try:
             test_profile = instaloader.Profile.from_username(L.context, username)
-            print(f"✅ Instagram: Session active vérifiée (@{test_profile.username}, {test_profile.followers} followers)")
-        except Exception as e:
-            print(f"⚠️  Instagram: Session peut-être invalide: {e}")
-            # Réessayer le login
+        except Exception:
             try:
-                print("Instagram: Nouvelle tentative de login...")
                 L.login(username, password)
                 L.save_session_to_file()
-                print("✅ Instagram: Re-login réussi!")
-            except Exception as e2:
-                print(f"❌ Instagram: Re-login échoué: {e2}")
+            except Exception:
                 return []
         
-        # Scraper le hashtag - utiliser le contexte avec session
-        print(f"Instagram: Scraping #{hashtag}...")
         try:
-            # Essayer d'abord avec le contexte de session
             hashtag_obj = instaloader.Hashtag.from_name(L.context, hashtag)
-        except Exception as e:
-            print(f"⚠️  Erreur accès hashtag: {e}")
-            print("   Instagram peut bloquer l'accès aux hashtags même avec login")
-            print("   Tentative alternative: scraper via profil...")
+        except Exception:
             return []
         
         count = 0
@@ -160,7 +99,6 @@ def scrape_instagram_instaloader(hashtag: str, limit: int, username: str = None,
                 break
             
             try:
-                # Récupérer les infos du post
                 caption = post.caption or ""
                 likes = post.likes
                 comments = post.comments
@@ -175,7 +113,7 @@ def scrape_instagram_instaloader(hashtag: str, limit: int, username: str = None,
                     "text": "",
                     "score": likes + comments,
                     "likes": likes,
-                    "retweets": comments,  # Compatibilité avec format Twitter
+                    "retweets": comments,
                     "username": owner,
                     "created_utc": timestamp.isoformat() if timestamp else None,
                     "source": "instagram",
@@ -185,32 +123,21 @@ def scrape_instagram_instaloader(hashtag: str, limit: int, username: str = None,
                 })
                 
                 count += 1
-                if count % 10 == 0:
-                    print(f"  {count}/{limit} posts récupérés...")
-                
-                # Délai pour éviter rate limit
                 time.sleep(1)
                 
-            except Exception as e:
-                print(f"  Erreur sur post {count}: {e}")
+            except Exception:
                 continue
         
-        print(f"✅ Instagram: {len(posts)} posts récupérés avec Instaloader")
+        print(f"Done: {len(posts)} posts")
         
-    except Exception as e:
-        print(f"❌ Erreur Instaloader: {e}")
-        # Fallback Selenium si disponible
+    except Exception:
         if SELENIUM_OK:
-            print("Instagram: Fallback vers Selenium...")
             return scrape_instagram_selenium(hashtag, limit)
     
     return posts
 
 
 def scrape_instagram_selenium(hashtag: str, limit: int) -> list:
-    """
-    Scrape Instagram avec Selenium (fallback, moins fiable)
-    """
     posts = []
     
     if not SELENIUM_OK:
@@ -227,19 +154,14 @@ def scrape_instagram_selenium(hashtag: str, limit: int) -> list:
         driver = webdriver.Chrome(options=options)
         url = f"https://www.instagram.com/explore/tags/{hashtag}/"
         
-        print(f"Instagram: Accès à {url}...")
         driver.get(url)
         time.sleep(5)
         
-        # Scroller pour charger les posts
-        for i in range(min(limit // 9, 5)):  # ~9 posts par scroll
+        for i in range(min(limit // 9, 5)):
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             time.sleep(2)
         
-        # Parser les posts
         soup = BeautifulSoup(driver.page_source, "lxml")
-        
-        # Selecteurs Instagram (peuvent changer)
         post_links = soup.select("a[href*='/p/']")
         seen_ids = set()
         
@@ -268,27 +190,22 @@ def scrape_instagram_selenium(hashtag: str, limit: int) -> list:
                     break
         
         driver.quit()
-        print(f"✅ Instagram: {len(posts)} posts récupérés avec Selenium")
+        print(f"Done: {len(posts)} posts")
         
-    except Exception as e:
-        print(f"❌ Erreur Selenium Instagram: {e}")
+    except Exception:
+        pass
     
     return posts
 
 
 def scrape_instagram_profile(username: str, limit: int = 50, insta_username: str = None, insta_password: str = None) -> list:
-    """
-    Scrape un profil Instagram spécifique
-    """
     if INSTALOADER_OK:
         return scrape_profile_instaloader(username, limit, insta_username, insta_password)
     else:
-        print("❌ Instaloader requis pour scraper des profils")
         return []
 
 
 def scrape_profile_instaloader(username: str, limit: int, insta_username: str = None, insta_password: str = None) -> list:
-    """Scrape un profil Instagram avec Instaloader"""
     posts = []
     
     try:
@@ -307,7 +224,6 @@ def scrape_profile_instaloader(username: str, limit: int, insta_username: str = 
             except:
                 pass
         
-        print(f"Instagram: Scraping profil @{username}...")
         profile = instaloader.Profile.from_username(L.context, username)
         
         count = 0
@@ -334,9 +250,9 @@ def scrape_profile_instaloader(username: str, limit: int, insta_username: str = 
             count += 1
             time.sleep(0.5)
         
-        print(f"✅ Instagram: {len(posts)} posts du profil @{username}")
+        print(f"Done: {len(posts)} posts")
         
-    except Exception as e:
-        print(f"❌ Erreur scraping profil: {e}")
+    except Exception:
+        pass
     
     return posts

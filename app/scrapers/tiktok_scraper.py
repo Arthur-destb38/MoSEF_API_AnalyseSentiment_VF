@@ -1,7 +1,5 @@
 """
-TikTok Scraper - Selenium avec comportement humain
-Scrape les hashtags crypto (expérimental)
-⚠️ TikTok a une protection anti-bot très agressive
+TikTok Scraper
 """
 
 import time
@@ -11,14 +9,8 @@ import ssl
 import os
 from datetime import datetime
 
-# Fix SSL pour macOS
 os.environ['WDM_SSL_VERIFY'] = '0'
 ssl._create_default_https_context = ssl._create_unverified_context
-
-try:
-    from app.storage import save_posts
-except Exception:
-    save_posts = None
 
 try:
     import undetected_chromedriver as uc
@@ -30,37 +22,34 @@ try:
     SELENIUM_OK = True
     UC_OK = True
 except ImportError:
+    UC_OK = False
     try:
         from selenium import webdriver
         from selenium.webdriver.chrome.options import Options
         SELENIUM_OK = True
-        UC_OK = False
     except ImportError:
         SELENIUM_OK = False
-        UC_OK = False
 
-# Limites très conservatrices (TikTok est strict)
-LIMITS = {
-    "selenium": 50  # Max très bas pour éviter les bans
-}
+try:
+    from app.storage import save_posts
+except Exception:
+    save_posts = None
+
+LIMITS = {"selenium": 50}
 
 
 def get_limits():
-    """Retourne les limites par methode"""
     return LIMITS
 
 
 def human_delay(min_sec=1.0, max_sec=3.0):
-    """Delai aleatoire pour imiter comportement humain"""
     time.sleep(random.uniform(min_sec, max_sec))
 
 
 def human_scroll(driver, distance=None):
-    """Scroll avec mouvement humain (lent et progressif)"""
     if distance is None:
         distance = random.randint(200, 500)
     
-    # Scroll très progressif
     steps = random.randint(5, 10)
     step_size = distance // steps
     
@@ -72,10 +61,8 @@ def human_scroll(driver, distance=None):
 
 
 def random_mouse_movement(driver):
-    """Simule des mouvements de souris aléatoires"""
     try:
         action = ActionChains(driver)
-        # Mouvement aléatoire
         for _ in range(random.randint(2, 4)):
             x_offset = random.randint(-100, 100)
             y_offset = random.randint(-100, 100)
@@ -87,10 +74,7 @@ def random_mouse_movement(driver):
 
 
 def setup_driver(headless: bool = False):
-    """Configure Chrome avec undetected-chromedriver pour bypass anti-bot"""
-    
     if UC_OK:
-        # Utiliser undetected-chromedriver (meilleur pour TikTok)
         try:
             options = uc.ChromeOptions()
             
@@ -108,18 +92,12 @@ def setup_driver(headless: bool = False):
                 use_subprocess=True,
                 version_main=None  # Auto-detect Chrome version
             )
-            print("TikTok: Utilisation de undetected-chromedriver")
             return driver
-        except Exception as e:
-            print(f"Erreur undetected-chromedriver: {e}")
-            # Fallback vers selenium standard
-            print("TikTok: Fallback vers selenium standard...")
+        except Exception:
             pass
-    else:
-        # Fallback vers selenium standard
+    if not UC_OK and SELENIUM_OK:
         from selenium import webdriver
         from selenium.webdriver.chrome.options import Options
-        
         options = Options()
         
         if headless:
@@ -139,25 +117,12 @@ def setup_driver(headless: bool = False):
         
         try:
             driver = webdriver.Chrome(options=options)
-            print("TikTok: Utilisation de selenium standard (moins efficace)")
             return driver
-        except Exception as e:
-            print(f"Erreur Chrome: {e}")
+        except Exception:
             return None
 
 
 def scrape_tiktok(hashtag: str, limit: int = 30, method: str = "selenium") -> list:
-    """
-    Scrape TikTok pour les vidéos d'un hashtag crypto
-    
-    Args:
-        hashtag: Hashtag à scraper (ex: "bitcoin", "crypto", "btc")
-        limit: Nombre de vidéos souhaités (max 50)
-        method: Ignoré (toujours selenium)
-    
-    Returns:
-        Liste de posts avec descriptions et métriques
-    """
     if not SELENIUM_OK:
         print("Selenium non installé")
         return []
@@ -174,9 +139,8 @@ def scrape_tiktok(hashtag: str, limit: int = 30, method: str = "selenium") -> li
         return []
     
     try:
-        # URL du hashtag TikTok
         url = f"https://www.tiktok.com/tag/{hashtag}"
-        print(f"TikTok: Loading {url}...")
+        print(f"Loading {url}")
         
         driver.get(url)
         
@@ -185,15 +149,12 @@ def scrape_tiktok(hashtag: str, limit: int = 30, method: str = "selenium") -> li
         
         # Vérifier si on est bloqué
         if is_blocked(driver):
-            print("TikTok: Accès bloqué (captcha ou restriction)")
             driver.quit()
             return []
         
-        # Simuler comportement humain initial
         random_mouse_movement(driver)
         human_delay(1, 2)
         
-        # Scroll et collect
         scroll_count = 0
         max_scrolls = (limit // 3) + 5
         no_new_count = 0
@@ -205,11 +166,9 @@ def scrape_tiktok(hashtag: str, limit: int = 30, method: str = "selenium") -> li
             if new_posts:
                 posts.extend(new_posts)
                 no_new_count = 0
-                print(f"TikTok: {len(posts)} vidéos collectées...")
             else:
                 no_new_count += 1
                 if no_new_count >= 3:
-                    print("TikTok: Plus de nouvelles vidéos ou bloqué")
                     break
             
             # Scroll humain (très lent)
@@ -224,10 +183,10 @@ def scrape_tiktok(hashtag: str, limit: int = 30, method: str = "selenium") -> li
             
             scroll_count += 1
         
-        print(f"TikTok: Total {len(posts)} vidéos scraped")
+        print(f"Done: {len(posts)} videos")
         
-    except Exception as e:
-        print(f"Erreur TikTok: {e}")
+    except Exception:
+        pass
     finally:
         driver.quit()
     
@@ -240,7 +199,6 @@ def scrape_tiktok(hashtag: str, limit: int = 30, method: str = "selenium") -> li
 
 
 def is_blocked(driver) -> bool:
-    """Détecte si TikTok bloque l'accès"""
     page_source = driver.page_source.lower()
     
     indicators = [
@@ -277,9 +235,7 @@ def parse_tiktok_videos(page_source: str, seen_ids: set, hashtag: str) -> list:
         if videos:
             break
     
-    # Si pas de vidéos trouvées, essayer une approche plus générique
     if not videos:
-        # Chercher tous les liens vers des vidéos
         videos = soup.find_all("a", href=re.compile(r"/video/\d+"))
     
     for video in videos:
@@ -302,7 +258,6 @@ def parse_tiktok_videos(page_source: str, seen_ids: set, hashtag: str) -> list:
                 continue
             seen_ids.add(video_id)
             
-            # Description
             description = ""
             desc_selectors = [
                 "[data-e2e='video-desc']",
@@ -329,7 +284,6 @@ def parse_tiktok_videos(page_source: str, seen_ids: set, hashtag: str) -> list:
             comments = extract_metric(video, ["comment", "reply"])
             shares = extract_metric(video, ["share", "repost"])
             
-            # Username
             username = ""
             user_el = video.select_one("[data-e2e='video-author-uniqueid'], [class*='author'], a[href*='/@']")
             if user_el:
@@ -363,9 +317,7 @@ def parse_tiktok_videos(page_source: str, seen_ids: set, hashtag: str) -> list:
 
 
 def extract_metric(element, keywords: list) -> int:
-    """Extraire une métrique (likes, vues, etc.)"""
     try:
-        # Chercher dans les attributs et le texte
         element_html = str(element).lower()
         element_text = element.get_text().lower()
         
@@ -376,7 +328,6 @@ def extract_metric(element, keywords: list) -> int:
                 el_class = " ".join(el.get("class", []))
                 
                 if keyword in el_class.lower() or keyword in el_text.lower():
-                    # Extraire le nombre
                     numbers = re.findall(r"([\d.,]+)\s*([KMB])?", el_text, re.IGNORECASE)
                     for num_str, suffix in numbers:
                         try:
@@ -411,12 +362,10 @@ CRYPTO_HASHTAGS = {
 
 
 def get_hashtags_for_crypto(crypto_name: str) -> list:
-    """Retourne les hashtags pertinents pour une crypto"""
     crypto_lower = crypto_name.lower()
     
     for key, hashtags in CRYPTO_HASHTAGS.items():
         if key in crypto_lower or crypto_lower in key:
             return hashtags
     
-    # Par défaut, utiliser le nom comme hashtag
     return [crypto_lower, "crypto"]
