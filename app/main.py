@@ -273,17 +273,23 @@ async def get_price(crypto: str):
 
 # ===================== ENDPOINT SENTIMENT =====================
 
+class SentimentRequest(BaseModel):
+    """Requete d'analyse sentiment"""
+    texts: List[str] = Field(description="Liste de textes a analyser")
+    model: ModelEnum = Field(default=ModelEnum.finbert)
+
+
 @app.post("/sentiment", tags=["NLP"])
-async def analyze_sentiment(texts: List[str], model: ModelEnum = ModelEnum.finbert):
+async def analyze_sentiment(req: SentimentRequest):
     """
     Analyse le sentiment d'une liste de textes
 
     Retourne: label (Bullish/Bearish/Neutral) et score
     """
-    analyzer = get_analyzer(model.value)
+    analyzer = get_analyzer(req.model.value)
     results = []
 
-    for text in texts:
+    for text in req.texts:
         cleaned = clean_text(text)
         if cleaned and len(cleaned) > 5:
             result = analyzer.analyze(cleaned)
@@ -294,12 +300,10 @@ async def analyze_sentiment(texts: List[str], model: ModelEnum = ModelEnum.finbe
             })
 
     return {
-        "model": model.value,
+        "model": req.model.value,
         "count": len(results),
         "results": results
     }
-
-
 # ===================== ENDPOINT ANALYSE COMPLETE =====================
 
 @app.post("/analyze", tags=["Analyse"])
