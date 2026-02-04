@@ -1,0 +1,100 @@
+% ============================================================
+% PARTIE SCRAPING (Arthur) -- Simple : 4 slides, tableau recapitulatif
+% ============================================================
+
+\section{II. Scraping}
+
+% ---------- Slide 1 : Objectif + pipeline en largeur + notions réduites ----------
+\begin{frame}{Scraping -- Objectif}
+\vspace{0.15cm}
+\centering
+\begin{tikzpicture}[
+  node distance=0.55cm,
+  box/.style={draw=#1, line width=1.2pt, rounded corners=10pt, minimum width=2.1cm, minimum height=0.95cm, fill=bglight, align=center, font=\small},
+  arrow/.style={-{Stealth[length=2.5mm]}, thick, accent}
+]
+  \node[box=accent] (sources) {\faIcon{comments}\\[-2pt]\textbf{Sources}\\[-4pt]\scriptsize Reddit, Twitter, etc.};
+  \node[box=accent, right=0.6cm of sources] (collecte) {\faIcon{cloud-download-alt}\\[-2pt]\textbf{Collecte}\\[-4pt]\scriptsize Scraping / API};
+  \node[box=border, right=0.6cm of collecte] (stockage) {\faIcon{database}\\[-2pt]\textbf{Stockage}\\[-4pt]\scriptsize SQLite};
+  \node[box=success, right=0.6cm of stockage] (nlp) {\faIcon{brain}\\[-2pt]\textbf{NLP}\\[-4pt]\scriptsize Sentiment};
+  \node[box=success, right=0.6cm of nlp] (viz) {\faIcon{chart-line}\\[-2pt]\textbf{Dashboard}\\[-4pt]\scriptsize Streamlit};
+  \draw[arrow] (sources) -- (collecte) (collecte) -- (stockage) (stockage) -- (nlp) (nlp) -- (viz);
+\end{tikzpicture}
+\vspace{0.5cm}
+\begin{block}{Objectif}
+\centering
+Collecter des posts texte depuis plusieurs plateformes pour alimenter l'analyse de sentiment crypto.
+\end{block}
+\vspace{0.2cm}
+\textcolor{textsecondary}{\small \textbf{Notions :} Sources multiples (Reddit, Twitter, YouTube\ldots) ; collecte HTTP / Selenium / APIs ; sauvegarde auto en base.}
+\end{frame}
+
+% ---------- Slide 2 : Tableau récapitulatif (remarques courtes, lignes alternées) ----------
+\begin{frame}{Scraping -- Tableau récapitulatif}
+\vspace{0.15cm}
+\small
+\begin{center}
+\begin{tabular}{@{}llp{5.2cm}@{}}
+\toprule
+\textbf{Source} & \textbf{Méthode} & \textbf{Remarque} \\
+\midrule
+Reddit & HTTP ou Selenium & Fallback Selenium si bloqué \\
+\rowcolor{bglight}
+Twitter & Selenium & Profils publics ou login \\
+StockTwits & Selenium & Labels Bullish/Bearish (NLP) \\
+\rowcolor{bglight}
+Telegram & API / HTTP & Channels publics, texte \\
+4chan & HTTP & Forum /biz/, requêtes directes \\
+\rowcolor{bglight}
+Bitcointalk & HTTP & Forum crypto, scraping pages \\
+GitHub & API & Issues, dépôts crypto \\
+\rowcolor{bglight}
+Bluesky & AT Protocol & Posts publics \\
+YouTube & API & Commentaires (clé API) \\
+\bottomrule
+\end{tabular}
+\end{center}
+\vspace{0.3cm}
+\textcolor{textsecondary}{\scriptsize Limites : Reddit HTTP $\sim$1000 posts, Selenium $\sim$200. StockTwits = seule source avec labels humains.}
+\end{frame}
+
+% ---------- Slide 3 : Schéma des méthodes (HTTP / Selenium / API) ----------
+\begin{frame}{Scraping -- Méthodes : qui fait quoi ?}
+\vspace{0.3cm}
+\centering
+\begin{tikzpicture}[
+  scale=1.05,
+  every node/.append style={transform shape},
+  box/.style={draw=#1, line width=1.2pt, rounded corners=10pt, minimum width=2.2cm, minimum height=1cm, fill=bglight, align=center, font=\small},
+  arrow/.style={-{Stealth[length=2.5mm]}, thick, accent},
+  ex/.style={font=\scriptsize, text=textsecondary, align=left}
+]
+  \node[box=accent, minimum width=1.8cm] (plateforme) {\textbf{Plateforme}};
+  \node[box=success, above right=1.2cm and 2.2cm of plateforme] (api) {\textbf{API}\\[-2pt]\scriptsize Rapide, clé requise};
+  \node[box=accent, right=2.6cm of plateforme] (selenium) {\textbf{Selenium}\\[-2pt]\scriptsize Pas d'API / dynamique};
+  \node[box=border, below right=1.2cm and 2.2cm of plateforme] (http) {\textbf{HTTP}\\[-2pt]\scriptsize Pages statiques};
+  \draw[arrow] (plateforme) -- (api);
+  \draw[arrow] (plateforme) -- (selenium);
+  \draw[arrow] (plateforme) -- (http);
+  \node[ex, right=0.45cm of api, anchor=west] {Reddit, Telegram, GitHub,\\YouTube, Bluesky};
+  \node[ex, right=0.45cm of selenium, anchor=west] {Twitter, StockTwits};
+  \node[ex, right=0.45cm of http, anchor=west] {4chan, Bitcointalk};
+\end{tikzpicture}
+\end{frame}
+
+% ---------- Slide 4 : Anecdotes terrain (format court, tout visible) ----------
+\begin{frame}{Scraping -- Anecdotes terrain}
+\vspace{0.4cm}
+\begin{itemize}
+  \item \textbf{\faIcon{key} YouTube} — Clé API sur \textbf{Google Cloud Console} (YouTube Data API v3) ; quotas gratuits limités.
+  \vspace{0.25cm}
+  \item \textbf{\faIcon{shield-alt} Twitter} — Anti-bot \textbf{renforcé très récemment} $\to$ Selenium aléatoire ; en pratique : profils publics ou compte dédié.
+  \vspace{0.25cm}
+  \item \textbf{\faIcon{bug} Nitter} — Instances souvent down ou bloquées ; à ne pas utiliser comme seule source Twitter.
+  \vspace{0.25cm}
+  \item \textbf{\faIcon{chrome} Chrome} — \textbf{Fermer toutes les fenêtres} avant un scrape Selenium (sinon le driver se connecte à une session existante).
+  \vspace{0.25cm}
+  \item \textbf{\faIcon{chart-line} StockTwits} — Seule source avec \textbf{labels humains} Bullish/Bearish pour évaluer les modèles NLP.
+\end{itemize}
+\end{frame}
+

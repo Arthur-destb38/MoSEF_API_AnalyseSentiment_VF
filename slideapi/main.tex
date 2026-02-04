@@ -1,0 +1,113 @@
+% Crypto Sentiment Analysis - Presentation MoSEF 2024-2025
+% Compilation: pdflatex main.tex (ou latexmk -pdf main.tex)
+% Theme: memes couleurs que le dashboard Streamlit (violet/indigo)
+
+\documentclass[11pt,aspectratio=169]{beamer}
+\usetheme{default}
+\usecolortheme{default}
+
+% ============================================
+% THEME & COULEURS (Streamlit app)
+% ============================================
+\definecolor{bgdark}{RGB}{26, 26, 46}
+\definecolor{bglight}{RGB}{30, 30, 46}
+\definecolor{border}{RGB}{63, 63, 92}
+\definecolor{accent}{RGB}{99, 102, 241}
+\definecolor{accentlight}{RGB}{165, 180, 252}
+\definecolor{textwhite}{RGB}{224, 231, 255}
+\definecolor{textsecondary}{RGB}{148, 163, 184}
+\definecolor{success}{RGB}{74, 222, 128}
+\definecolor{warning}{RGB}{251, 191, 36}
+\definecolor{danger}{RGB}{248, 113, 113}
+
+% Appliquer les couleurs
+\setbeamercolor{background canvas}{bg=bgdark}
+\setbeamercolor{normal text}{fg=textwhite}
+\setbeamercolor{title}{fg=textwhite}
+\setbeamercolor{frametitle}{fg=textwhite}
+\setbeamercolor{subtitle}{fg=textsecondary}
+\setbeamercolor{itemize item}{fg=accent}
+\setbeamercolor{itemize subitem}{fg=accent}
+\setbeamercolor{enumerate item}{fg=accent}
+\setbeamercolor{alerted text}{fg=danger}
+\setbeamercolor{author}{fg=textsecondary}
+\setbeamercolor{institute}{fg=textsecondary}
+\setbeamercolor{date}{fg=textsecondary}
+\setbeamercolor{section in toc}{fg=textwhite}
+\setbeamercolor{subsection in toc}{fg=textsecondary}
+\setbeamercolor{block title}{fg=textwhite,bg=border}
+\setbeamercolor{block body}{fg=textwhite,bg=bglight}
+\setbeamercolor{block title alerted}{fg=textwhite,bg=danger}
+\setbeamercolor{block body alerted}{fg=textwhite,bg=bglight}
+\setbeamercolor{block title example}{fg=bgdark,bg=warning}
+\setbeamercolor{block body example}{fg=textwhite,bg=bglight}
+
+% Blocs arrondis
+\setbeamertemplate{blocks}[rounded][shadow=false]
+\setbeamerfont{block title}{series=\bfseries}
+
+% Supprimer navigation, pied de page minimal
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}{%
+  \hfill\color{textsecondary}\scriptsize\insertframenumber\,/\,\inserttotalframenumber\hspace{1em}\vspace{0.5em}
+}
+\setbeamertemplate{headline}{}
+
+% Police (comme l'exemple)
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+
+% Packages utiles
+\usepackage[table]{xcolor}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit}
+\usepackage{fontawesome5}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{hyperref}
+
+% ---------- Page de titre (logo ou icone) ----------
+\setbeamertemplate{title page}{%
+  \vspace{1em}
+  \begin{center}
+  \IfFileExists{logo.png}{%
+    \includegraphics[height=1.8cm]{logo.png}\\[0.8em]
+  }{%
+    \begin{tikzpicture}
+      \node[draw=accent, line width=1.5pt, fill=bglight, rounded corners=12pt, minimum width=2.2cm, minimum height=2.2cm] {\textcolor{accent}{\fontsize{36}{40}\selectfont \faIcon{chart-line}}};
+    \end{tikzpicture}\\[0.5em]
+  }
+  {\usebeamercolor{title}\usebeamerfont{title}\inserttitle\par}
+  \vspace{0.5em}
+  {\usebeamercolor{subtitle}\usebeamerfont{subtitle}\insertsubtitle\par}
+  \vspace{1.5em}
+  {\usebeamercolor{author}\insertauthor\par}
+  \vspace{0.3em}
+  {\usebeamercolor{institute}\insertinstitute\par}
+  \vspace{0.3em}
+  {\usebeamercolor{date}\insertdate\par}
+  \end{center}
+}
+
+\title{Crypto Sentiment Analysis}
+\subtitle{Projet MoSEF 2025-2026 -- Universit\'e Paris 1 Panth\'eon-Sorbonne}
+\author{\textbf{\textit{Groupe 10}}}
+\institute{Master MoSEF}
+\date{\today}
+
+\begin{document}
+
+\input{00_title}
+\input{00_intro}
+\input{01_scraping}
+\input{01b_api}
+\input{02_donnees}
+\input{03_nlp}
+\input{04_dashboard}
+\input{05_conclusion}
+
+\end{document}

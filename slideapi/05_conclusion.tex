@@ -1,0 +1,28 @@
+% ============================================================
+% CONCLUSION (à compléter / ajuster ensemble)
+% ============================================================
+
+\section{VII. Conclusion}
+
+\begin{frame}{Conclusion}
+\vspace{0.2cm}
+\begin{itemize}
+\item \textbf{Résumé du pipeline} : collecte multi-sources (APIs + Selenium) $\to$ stockage (SQLite ou PostgreSQL cloud) $\to$ analyse NLP (FinBERT / CryptoBERT) $\to$ outil Streamlit (stats, graphiques, exports).
+
+\vspace{0.2cm}
+
+\item \textbf{Limites} : dépendance Selenium/Chrome ; blocages fréquents (Twitter, StockTwits, Cloudflare) ; volumétrie et qualité des données ; biais selon les sources.
+
+\vspace{0.2cm}
+
+\item \textbf{Pistes} : ajouter des sources (Discord, YouTube, etc.) ; fine-tuning CryptoBERT sur notre corpus ; déploiement (Render, Streamlit Cloud) ; lien économétrique sentiment / prix.
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\centering \Large Merci pour votre attention.\\
+\vspace{1em}
+Questions ?
+\end{frame}
+
+

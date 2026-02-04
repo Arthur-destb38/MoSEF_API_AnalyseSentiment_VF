@@ -1,0 +1,68 @@
+% ============================================================
+% PARTIE ANALYSE NLP
+% ============================================================
+
+\section{V. Analyse NLP}
+
+% ---------- Slide 1 : Objectif + pipeline et modèles ----------
+\begin{frame}{Analyse NLP -- Objectif et modèles}
+\vspace{0.2cm}
+\textbf{Objectif :} prédire le sentiment (Bullish / Bearish / Neutral) des posts crypto pour alimenter indicateurs et stratégies.
+
+\vspace{0.4cm}
+\centering
+\begin{tikzpicture}[
+  node distance=0.5cm,
+  box/.style={draw=#1, line width=1.1pt, rounded corners=8pt, minimum width=1.8cm, minimum height=0.7cm, fill=bglight, align=center, font=\small},
+  arrow/.style={-{Stealth[length=2.5mm]}, thick, accent}
+]
+  \node[box=accent] (texte) {\faIcon{comment}\\[-3pt]\textbf{Post}\\[-4pt]texte};
+  \node[box=accent, right=0.6cm of texte] (modele) {\faIcon{brain}\\[-3pt]\textbf{Modèle}\\[-4pt]FinBERT / CryptoBERT};
+  \node[box=success, right=0.6cm of modele] (sortie) {\faIcon{chart-line}\\[-3pt]\textbf{Score + Label}\\[-4pt]Bullish / Bearish / Neutral};
+  \draw[arrow] (texte) -- (modele) (modele) -- (sortie);
+\end{tikzpicture}
+
+\vspace{0.5cm}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.48\textwidth}
+\begin{block}{\faIcon{university} FinBERT (ProsusAI)}
+Modèle BERT fine-tuné sur la \textbf{finance générale}. Sortie : positive / negative / neutral ; on mappe vers Bullish / Bearish / Neutral. Score $\in [-1, 1]$.
+\end{block}
+\end{column}
+\begin{column}{0.48\textwidth}
+\begin{block}{\faIcon{coins} CryptoBERT (ElKulako)}
+Modèle \textbf{spécifique crypto}. Sortie native : bearish / neutral / bullish. Score = bullish $-$ bearish. Max length 128 tokens.
+\end{block}
+\end{column}
+\end{columns}
+\end{frame}
+
+% ---------- Slide 2 : Détail technique ----------
+\begin{frame}{Analyse NLP -- Détail technique}
+\vspace{0.15cm}
+\begin{itemize}
+  \item \textbf{Entrée :} texte du post (tronqué à 512 tokens pour FinBERT, 128 pour CryptoBERT).
+  \item \textbf{Sortie :} \texttt{score} $\in [-1, 1]$ (négatif = bearish, positif = bullish) et \texttt{label} $\in \{\text{Bullish}, \text{Bearish}, \text{Neutral}\}$ ; probabilités par classe.
+  \item \textbf{Seuils (FinBERT) :} score $> 0.05$ $\to$ Bullish ; score $< -0.05$ $\to$ Bearish ; sinon Neutral.
+  \item \textbf{CryptoBERT :} label = classe de probabilité max (bearish / neutral / bullish).
+\end{itemize}
+\vspace{0.35cm}
+\begin{block}{}
+\centering
+\texttt{SentimentAnalyzer(model\_name="finbert" | "cryptobert")} ; \texttt{analyze(text)} et \texttt{analyze\_batch(texts)}. PyTorch + Hugging Face \texttt{transformers}.
+\end{block}
+\end{frame}
+
+% ---------- Slide 3 : Évaluation et usage ----------
+\begin{frame}{Analyse NLP -- Évaluation et usage}
+\vspace{0.2cm}
+\begin{itemize}
+  \item \textbf{Évaluation :} StockTwits fournit des \textbf{labels humains} Bullish/Bearish sur les posts ; on peut comparer nos prédictions (FinBERT / CryptoBERT) à ces labels pour mesurer la qualité.
+  \item \textbf{Dashboard :} analyse par lot sur les posts en base ; comparaison des deux modèles ; stats et graphiques (répartition des labels, évolution dans le temps).
+  \item \textbf{Pistes :} fine-tuning de CryptoBERT sur notre corpus ; agrégation du sentiment (indicateur quotidien) pour lien avec les prix.
+\end{itemize}
+\vspace{0.3cm}
+\begin{exampleblock}{\faIcon{lightbulb}}
+Les deux modèles sont complémentaires : FinBERT (finance large) vs CryptoBERT (vocabulaire et contexte crypto). Comparer leurs sorties aide à interpréter le sentiment.
+\end{exampleblock}
+\end{frame}

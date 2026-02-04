@@ -1,0 +1,302 @@
+% Rapport académique - Crypto Sentiment Analysis
+% Projet MoSEF 2024-2025 | ~10 pages
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small, breaklines=true, frame=single, numbers=left}
+
+\begin{document}
+\begin{titlepage}
+\thispagestyle{empty}
+\centering
+\vspace*{1.5cm}
+{\LARGE \textbf{Université Paris 1 Panthéon-Sorbonne}\\[0.5em]}
+{\large École d'économie de la Sorbonne\\Master MoSEF}\\[2cm]
+\rule{\textwidth}{0.5pt}\\[0.8em]
+{\Huge \textbf{Crypto Sentiment Analysis}\\[0.6em]}
+\rule{\textwidth}{0.5pt}\\[2cm]
+{\large Rapport de projet}\\[1.2cm]
+{\large \textbf{Projet MoSEF 2025--2026}}\\[0.5em]
+{\large Groupe 10}\\[2cm]
+{\large \today}\\[0.5em]
+\vfill
+{\normalsize Université Paris 1 Panthéon-Sorbonne\\106--112 boulevard de l'Hôpital, 75013 Paris}
+\end{titlepage}
+
+\newpage
+
+
+\tableofcontents
+\newpage
+
+
+
+%==============================================================================
+\section{Introduction}
+%==============================================================================
+
+Le projet \textit{Crypto Sentiment Analysis} vise à collecter des posts texte issus de plusieurs plateformes (Reddit, Twitter, StockTwits, Telegram, 4chan, Bitcointalk, GitHub, Bluesky, YouTube), à les stocker dans une base de données et à en extraire un indicateur de sentiment à l'aide de modèles de NLP pré-entraînés (FinBERT et CryptoBERT). L'objectif final est d'étudier la relation entre le sentiment des communautés en ligne et l'évolution des prix des cryptomonnaies. Ce travail s'inscrit dans le cadre du Master MoSEF (Université Paris 1 Panthéon-Sorbonne) et s'appuie sur une application multi-composants : une API REST (FastAPI), une base de données (SQLite ou PostgreSQL), des scrapers (HTTP, Selenium, APIs) et un dashboard Streamlit pour la visualisation et les analyses.
+
+\medskip
+L'analyse de sentiment sur les marchés financiers et les actifs crypto s'appuie de plus en plus sur les discours publics : forums, réseaux sociaux et plateformes de discussion. Les posts et commentaires y reflètent des opinions (optimistes, pessimistes ou neutres) qui peuvent anticiper ou accompagner les mouvements de prix. Construire un indicateur de sentiment à partir de ces sources suppose toutefois de disposer d'un flux de données homogène, stocké et traité de façon reproductible, puis d'un modèle de classification adapté au domaine (finance générale ou jargon crypto). Ce rapport décrit les choix techniques retenus pour répondre à ces exigences.
+
+\medskip
+La chaîne de traitement comporte quatre étapes. La première est la \textbf{collecte} des posts, par scraping (HTTP ou Selenium) ou via les APIs officielles selon les plateformes. La deuxième est le \textbf{stockage} dans une base relationnelle (SQLite en local ou PostgreSQL en cloud). La troisième est l'\textbf{analyse NLP} : chaque post est associé à un label (Bullish, Bearish ou Neutral) et à un score à l'aide des modèles FinBERT et CryptoBERT. La quatrième est la \textbf{visualisation et l'économétrie}, via un dashboard Streamlit ou l'API REST, afin d'agréger les résultats et de les confronter aux prix. Ce rapport détaille les trois premiers maillons : les méthodes de scraping (section~\ref{sec:scraping}), l'API REST et ses endpoints (section~\ref{sec:api}), la base de données (section~\ref{sec:db}) et les modèles FinBERT et CryptoBERT (section~\ref{sec:nlp}). La section~\ref{sec:outil} présente l'outil dashboard Streamlit et l'intérêt de son usage par rapport à l'API seule. La conclusion synthétise les limites et pistes d'amélioration.
+
+\newpage
+
+%==============================================================================
+\section{Méthodes de scraping}
+\label{sec:scraping}
+%==============================================================================
+
+\subsection{Objectif et pipeline}
+
+L'objectif du module de scraping est d'extraire des posts texte (titres, corps de message, métadonnées) depuis des plateformes variées, sans dépendre d'une seule API payante. Les contraintes sont multiples : certaines plateformes n'offrent pas d'API gratuite (Twitter), d'autres protègent leurs pages par anti-bot ou Cloudflare (StockTwits), d'autres encore exposent une API JSON ou REST (Reddit, Telegram, GitHub, Bluesky). Le projet combine donc trois types d'accès : \textbf{requêtes HTTP} (Reddit JSON, 4chan, Bitcointalk), \textbf{APIs officielles} (Telegram, GitHub, Bluesky, YouTube) et \textbf{Selenium} (Twitter, StockTwits, ou Reddit en fallback lorsque l'accès HTTP est bloqué).
+
+\medskip
+
+La figure~\ref{fig:pipeline} schématise le pipeline global : les sources alimentent les scrapers, dont la sortie est persistée en base puis consommée par le module NLP.
+
+\medskip
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[node distance=1.2cm, every node/.style={font=\small}]
+  \node[draw, rounded corners=6pt, minimum width=2cm, minimum height=0.7cm] (A) {Sources};
+  \node[draw, rounded corners=6pt, minimum width=2cm, minimum height=0.7cm, right=of A] (B) {Scrapers};
+  \node[draw, rounded corners=6pt, minimum width=2cm, minimum height=0.7cm, right=of B] (C) {Base de données};
+  \node[draw, rounded corners=6pt, minimum width=2cm, minimum height=0.7cm, right=of C] (D) {NLP};
+  \draw[-{Stealth[length=2mm]}, thick] (A) -- (B) (B) -- (C) (C) -- (D);
+\end{tikzpicture}
+\caption{Pipeline global : sources, scrapers, base de données, analyse NLP.}
+\label{fig:pipeline}
+\end{figure}
+
+\medskip
+\subsection{Sources et méthodes}
+
+Le tableau~\ref{tab:sources} récapitule, pour chaque source, la méthode utilisée (HTTP, Selenium ou API) et les remarques principales. Reddit permet d'atteindre environ 1000 posts via l'API JSON (suffixe \texttt{.json} sur les URLs) sans authentification ; au-delà ou en cas de blocage, un scraper Selenium peut prendre le relais avec une limite plus basse (environ 200 posts) pour limiter la détection. Twitter et StockTwits ne fournissent pas d'API gratuite adaptée à notre usage : Twitter impose une API payante et un anti-bot agressif, StockTwits est protégé par Cloudflare, ce qui rend Selenium nécessaire. StockTwits présente l'intérêt d'afficher des labels humains (Bullish / Bearish) sur les messages, utiles pour évaluer la qualité des prédictions FinBERT et CryptoBERT. Telegram, GitHub, Bluesky et YouTube s'appuient sur des APIs officielles (token ou clé selon le cas) ; 4chan et Bitcointalk sont scrapés via des requêtes HTTP directes sur les pages HTML ou les endpoints publics.
+
+\begin{table}[htbp]
+\centering
+\caption{Sources de données et méthodes de collecte.}
+\label{tab:sources}
+\begin{tabular}{llp{5.5cm}}
+\toprule
+\textbf{Source} & \textbf{Méthode} & \textbf{Remarque} \\
+\midrule
+Reddit & HTTP ou Selenium & API JSON $\sim$1000 posts ; Selenium en fallback. \\
+Twitter & Selenium & Profils publics ou login pour recherche avancée. \\
+StockTwits & Selenium & Labels humains Bullish/Bearish. \\
+Telegram & API / HTTP & Channels publics, messages texte. \\
+4chan & HTTP & Forum /biz/, requêtes HTTP directes. \\
+Bitcointalk & HTTP & Forum crypto, scraping pages. \\
+GitHub & API & Issues et discussions (5000 req/h sans token). \\
+Bluesky & AT Protocol & API \texttt{xrpc}, compte recommandé. \\
+YouTube & API & Commentaires (clé API Google). \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\medskip
+\subsection{Points clés et limites}
+
+La collecte est conçue pour être déclenchée depuis l'interface Streamlit (formulaires, choix de la source et de la méthode, lancement en un clic) ou via l'API REST (voir section~\ref{sec:api}), par exemple depuis un script ou un cron pour automatiser des collectes périodiques. Chaque lot de posts est sauvegardé automatiquement en base après un scrape ; les doublons sont évités grâce à la clé \texttt{uid} (hash de la source, de la méthode et de l'identifiant du post). Les limites pratiques méritent d'être détaillées.
+
+\medskip
+Pour Twitter et StockTwits, l'usage d'un navigateur (Chrome piloté par Selenium) est nécessaire : Twitter n'offre pas d'API gratuite adaptée à notre volume, StockTwits est protégé par Cloudflare. Or Selenium et Chrome peuvent provoquer des crashs ou des blocages si plusieurs instances tournent en parallèle ou si le navigateur est déjà ouvert par l'utilisateur. En pratique, il est recommandé de fermer toute fenêtre Chrome avant de lancer un scrape Selenium et de limiter le nombre de posts par session (par exemple 200 pour Reddit Selenium, 300 pour StockTwits) pour réduire les risques de détection.
+
+\medskip
+De plus, les plateformes imposent des limites (nombre de requêtes par minute, anti-bot, CAPTCHA) qui varient selon la source et la méthode. Reddit en HTTP tolère environ 1000 posts par sous-reddit si les requêtes sont espacées ; au-delà, l'accès peut être temporairement bloqué. Twitter et StockTwits déclenchent plus facilement des blocages (pages de vérification, redirections). Les APIs officielles (Telegram, GitHub, Bluesky) ont des quotas documentés (par exemple 5000 requêtes/heure pour GitHub sans token) et sont en général plus stables.
+
+\medskip
+Le nombre de posts récupérables dépend de la source, de la méthode et des paramètres (sous-reddit, symbole StockTwits, channel Telegram). Une même crypto peut être très discutée sur Reddit et peu sur StockTwits, ce qui conduit à des déséquilibres dans la base ; les analyses agrégées (par source, par période) doivent en tenir compte.
+
+\medskip
+Malgré ces contraintes, le mélange HTTP, API et Selenium permet de couvrir un spectre large de plateformes (réseaux sociaux, forums, channels, dépôts) et d'alimenter une base unique pour les analyses ultérieures : agrégation du sentiment par source, comparaison FinBERT vs CryptoBERT, export pour l'économétrie. La diversité des sources améliore la représentativité du signal de sentiment, même si la qualité et la volumétrie restent hétérogènes.
+
+\newpage
+
+\newpage
+%==============================================================================
+\section{API REST et endpoints}
+\label{sec:api}
+%==============================================================================
+
+
+L'application expose une API REST construite avec \textbf{FastAPI}. Celle-ci permet de lancer des scrapes, de récupérer les posts stockés, d'exporter les données (CSV/JSON) et d'effectuer des analyses de sentiment (FinBERT ou CryptoBERT) sur des textes ou sur les posts en base. Les requêtes et réponses sont typées avec \textbf{Pydantic} : les modèles \texttt{ScrapeRequest}, \texttt{AnalyzeRequest}, \texttt{AnalyzeBothRequest} et \texttt{CompareModelsRequest} définissent les paramètres avec des valeurs par défaut et des contraintes (bornes min/max pour \texttt{limit}, énumérations pour \texttt{source}, \texttt{method}, \texttt{model}). La documentation OpenAPI (Swagger) est générée automatiquement à la racine \texttt{/docs}. Les modèles Pydantic assurent la validation des entrées : les champs numériques (\texttt{limit}) sont bornés (par exemple \texttt{ge=10}, \texttt{le=2000}), les énumérations (\texttt{source}, \texttt{method}, \texttt{model}) restreignent les valeurs autorisées, et les champs optionnels (dates Twitter, \texttt{min\_likes}) peuvent être omis. En cas de corps JSON invalide, FastAPI renvoie une erreur 422 avec le détail des champs incorrects, ce qui facilite le débogage et l'intégration par des clients tiers.
+
+\medskip
+
+Les endpoints sont regroupés par thème ; la documentation interactive (corps JSON, paramètres, exemples) est disponible à la racine \texttt{/docs}. Le tableau~\ref{tab:endpoints} en donne une vue synthétique.
+
+\begin{table}[htbp]
+\centering
+\caption{Vue synthétique des principaux endpoints.}
+\label{tab:endpoints}
+\small
+\begin{tabular}{llp{5.2cm}}
+\toprule
+\textbf{Méthode} & \textbf{Endpoint} & \textbf{Rôle} \\
+\midrule
+GET & \texttt{/} & Page d'accueil (dashboard). \\
+GET & \texttt{/compare} & Page comparaison FinBERT vs CryptoBERT. \\
+GET & \texttt{/health} & Statut et timestamp. \\
+GET & \texttt{/limits} & Limites de scraping par source. \\
+\midrule
+POST & \texttt{/scrape} & Lance un scrape (body : source, method, symbol, limit). \\
+POST & \texttt{/scrape/both} & Scrape Reddit et StockTwits pour une crypto. \\
+\midrule
+POST & \texttt{/sentiment} & Analyse de sentiment sur une liste de textes (FinBERT ou CryptoBERT). \\
+POST & \texttt{/analyze} & Scrape puis analyse NLP sur les posts récupérés. \\
+POST & \texttt{/analyze/both} & Même chose pour Reddit et StockTwits. \\
+POST & \texttt{/compare/models} & Compare FinBERT et CryptoBERT sur les mêmes posts. \\
+POST & \texttt{/compare/sources} & Compare les résultats entre sources. \\
+\midrule
+GET & \texttt{/prices/\{crypto\}} & Prix actuel via CoinGecko. \\
+GET & \texttt{/storage/stats} & Statistiques (total posts, premier/dernier scrape, répartition). \\
+GET & \texttt{/storage/posts} & Liste des posts (filtres : source, method, limit). \\
+GET & \texttt{/storage/export/csv} & Export CSV filtré. \\
+GET & \texttt{/storage/export/json} & Export JSON filtré. \\
+\midrule
+GET & \texttt{/telegram/channels} & Liste des channels Telegram configurés. \\
+GET & \texttt{/telegram/scrape/\{channel\}} & Scrape d'un channel avec limite optionnelle. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\newpage
+
+Les endpoints de \textbf{scraping} (\texttt{/scrape}, \texttt{/scrape/both}) acceptent les paramètres (source, méthode, symbole ou subreddit, limite) dans le corps JSON ou en query ; ils enregistrent les posts dans la base décrite en section~\ref{sec:db}. Les endpoints d'\textbf{analyse} (\texttt{/sentiment}, \texttt{/analyze}, \texttt{/compare/models}) s'appuient sur le module NLP (section~\ref{sec:nlp}) et, pour \texttt{/analyze}, sur le stockage pour lire les posts. Le \textbf{stockage} (\texttt{/storage/stats}, \texttt{/storage/posts}, exports) permet de consulter et d'exporter les données sans passer par le dashboard. L'API peut être consommée depuis un navigateur (pages HTML), depuis le dashboard Streamlit (appels internes) ou depuis des scripts (curl, \texttt{requests}) pour automatiser des collectes ou des analyses.
+
+\newpage
+%==============================================================================
+\section{Base de données}
+\label{sec:db}
+%==============================================================================
+
+Le projet est conçu pour fonctionner soit en local avec une base \textbf{SQLite}, soit sur le cloud avec \textbf{PostgreSQL} (ici Supabase). En l'absence de configuration PostgreSQL, le système utilise SQLite par défaut. L'implémentation est centralisée dans \texttt{app/storage.py} : une fonction \texttt{\_get\_connection()} retourne une connexion PostgreSQL ou SQLite selon la config, et les opérations (insert, select, export) sont écrites une seule fois en s'appuyant sur le curseur et les placeholders adaptés (\texttt{\%s} pour PostgreSQL, \texttt{?} pour SQLite). La figure~\ref{fig:db} illustre la différence entre les deux déploiements : en local, chaque machine possède sa propre copie SQLite ; en cloud, plusieurs utilisateurs ou machines écrivent et lisent la même base PostgreSQL, ce qui permet de partager les données collectées (par exemple tous les membres du groupe voient les mêmes posts après un scrape).
+
+\medskip
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[scale=0.95, every node/.style={font=\small}, arrow/.style={-{Stealth[length=2mm]}, thick, draw=black!70}]
+  % ---- Cadre local ----
+  \draw[rounded corners=10pt, draw=black!25, fill=black!3] (-0.4,-1.35) rectangle (2.85,1.45);
+  \node[font=\bfseries\small] at (1.25,1.15) {Base locale (SQLite)};
+  \node[draw, rounded corners=8pt, minimum width=1.5cm, minimum height=0.5cm, fill=white, draw=black!50] (m1) at (0.3,0.25) {Machine 1};
+  \node[draw, rounded corners=8pt, minimum width=1.5cm, minimum height=0.5cm, fill=white, draw=black!50] (m2) at (0.3,-0.65) {Machine 2};
+  \node[draw, rounded corners=8pt, minimum width=1.7cm, minimum height=0.55cm, fill=black!12, draw=black!60, line width=0.8pt] (db1) at (2.2,0.25) {\texttt{SQLite}};
+  \node[draw, rounded corners=8pt, minimum width=1.7cm, minimum height=0.55cm, fill=black!12, draw=black!60, line width=0.8pt] (db2) at (2.2,-0.65) {\texttt{SQLite}};
+  \draw[arrow] (m1) -- (db1);
+  \draw[arrow] (m2) -- (db2);
+  % ---- Séparateur ----
+  \draw[dashed, draw=black!30] (3.2,-1.4) -- (3.2,1.5);
+  % ---- Cadre cloud ----
+  \draw[rounded corners=10pt, draw=black!25, fill=black!3] (3.6,-1.35) rectangle (7.5,1.45);
+  \node[font=\bfseries\small] at (5.5,1.15) {Base cloud (PostgreSQL)};
+  \node[draw, rounded corners=8pt, minimum width=1.2cm, minimum height=0.45cm, fill=white, draw=black!50] (u1) at (4.1,0.5) {User 1};
+  \node[draw, rounded corners=8pt, minimum width=1.2cm, minimum height=0.45cm, fill=white, draw=black!50] (u2) at (4.1,0) {User 2};
+  \node[draw, rounded corners=8pt, minimum width=1.2cm, minimum height=0.45cm, fill=white, draw=black!50] (u3) at (4.1,-0.5) {User 3};
+  \node[draw, rounded corners=10pt, minimum width=2.1cm, minimum height=1.1cm, fill=black!12, draw=black!70, line width=1.2pt, align=center] (cloud) at (6.4,0) {\textbf{Base partagée}\\[0.15em]{\scriptsize\texttt{PostgreSQL}}};
+  \draw[arrow] (u1) -- (cloud);
+  \draw[arrow] (u2) -- (cloud);
+  \draw[arrow] (u3) -- (cloud);
+\end{tikzpicture}
+\caption{À gauche : chaque machine a sa propre base SQLite. À droite : une base PostgreSQL partagée (Supabase) pour tout le groupe.}
+\label{fig:db}
+\end{figure}
+
+\medskip
+
+Une seule table, \texttt{posts}, contient tous les posts scrapés : une ligne par post. Chaque post est identifié de façon unique par un champ \texttt{uid}, calculé à partir de la source, de la méthode et de l'identifiant du post sur la plateforme (ou du titre et de la date si l'identifiant manque). Ainsi, si le même post est scrapé plusieurs fois, il n'est enregistré qu'une seule fois. Le tableau~\ref{tab:schema} liste les colonnes et leur rôle : titre et texte du post, source (Reddit, Twitter, etc.), méthode (HTTP, Selenium, API), date de publication du post (\texttt{created\_utc}), date d'insertion en base (\texttt{scraped\_at}), auteur, lien, score, etc. Les données peuvent être exportées en CSV ou JSON, avec des filtres optionnels (par source, par méthode). Un fichier de sauvegarde (\texttt{data/scraped\_posts.jsonl}) peut en outre enregistrer chaque post ajouté, afin de conserver une copie des données en dehors de la base.
+
+\medskip
+\begin{table}[h!]
+\centering
+\caption{Colonnes de la table \texttt{posts}.}
+\label{tab:schema}
+\begin{tabular}{llp{5cm}}
+\toprule
+\textbf{Colonne} & \textbf{Type} & \textbf{Description} \\
+\midrule
+uid & VARCHAR(255) / TEXT & Clé primaire, hash unique. \\
+id & TEXT & Identifiant côté plateforme. \\
+source & TEXT & reddit, twitter, stocktwits, telegram, etc. \\
+method & TEXT & http, selenium, api. \\
+title & TEXT & Titre ou début du contenu. \\
+text & TEXT & Corps du message. \\
+score & INTEGER & Score / likes côté source. \\
+created\_utc & TEXT & Date de publication (ISO ou timestamp). \\
+... & ... & ... \\
+scraped\_at & TIMESTAMP / TEXT & Date d'insertion en base. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\clearpage
+%==============================================================================
+\section{FinBERT et CryptoBERT}
+\label{sec:nlp}
+%==============================================================================
+
+\subsection{Objectif}
+
+L'analyse de sentiment vise à associer à chaque post un label discret (\textbf{Bullish}, \textbf{Bearish} ou \textbf{Neutral}) et un score numérique, afin d'agréger les opinions par source, par période ou par crypto et de les comparer aux mouvements de prix. Le projet utilise deux modèles pré-entraînés : \textbf{FinBERT}, orienté finance générale, et \textbf{CryptoBERT}, entraîné sur un corpus de posts cryptos. Les deux sont des modèles BERT fine-tunés pour la classification de sentiment ; ils sont chargés via la bibliothèque \texttt{transformers} (Hugging Face) et encapsulés dans un module \texttt{app/nlp.py} qui expose des fonctions \texttt{analyze\_finbert} et \texttt{analyze\_cryptobert} ainsi qu'une classe \texttt{SentimentAnalyzer} pour unifier l'interface. Les références officielles sont \texttt{ProsusAI/finbert} et \texttt{ElKulako/cryptobert} sur le hub Hugging Face ; les modèles sont téléchargés au premier chargement puis mis en cache localement.
+
+\medskip
+\subsection{FinBERT}
+
+FinBERT (\texttt{ProsusAI/finbert}) est un modèle BERT pré-entraîné puis fine-tuné sur des textes financiers. En sortie, il produit trois probabilités : \texttt{positive}, \texttt{negative} et \texttt{neutral}. Le projet mappe ces sorties vers les labels Bullish (positive), Bearish (negative) et Neutral (neutral). Un score continu dans $[-1, 1]$ est dérivé par \texttt{score = positive - negative} ; un seuil (par exemple 0,05) permet de trancher entre Bullish et Neutral ou Bearish et Neutral lorsque les probabilités sont proches. Le texte est tokenisé avec une longueur maximale de 512 tokens (limite standard BERT) ; les textes trop courts sont renvoyés avec un label Neutral et un score nul.
+
+FinBERT est adapté aux communiqués de presse, rapports d'entreprises et discussions boursières générales. Sur du jargon crypto (mèmes, abréviations, hashtags), il peut sous-performer par rapport à un modèle spécialisé.
+
+\medskip
+\subsection{CryptoBERT}
+
+CryptoBERT (\texttt{ElKulako/cryptobert}) est fine-tuné sur un large corpus de messages liés aux cryptomonnaies (plusieurs millions de posts). Les classes de sortie sont directement \texttt{bearish}, \texttt{neutral} et \texttt{bullish}. Le score est calculé par \texttt{bullish - bearish} ; le label est attribué en comparant les trois probabilités (par exemple Bullish si \texttt{bullish} est la plus grande et dépasse les deux autres). La longueur maximale utilisée dans le projet est de 128 tokens, ce qui suffit pour des messages courts type Twitter ou StockTwits.
+
+CryptoBERT est donc mieux adapté au vocabulaire et aux tournures spécifiques des communautés crypto. La comparaison FinBERT vs CryptoBERT sur les mêmes posts (notamment StockTwits, où des labels humains sont disponibles) permet d'évaluer l'apport de la spécialisation au domaine crypto.
+
+\medskip
+\subsection{Intégration dans le pipeline}
+
+Les modèles sont chargés une fois (singleton ou cache au premier appel) pour éviter de recharger les poids à chaque requête. L'API \texttt{POST /sentiment} et les endpoints \texttt{POST /analyze}, \texttt{POST /analyze/both} et \texttt{POST /compare/models} appellent le module NLP après récupération des textes (depuis le corps de la requête ou depuis la base). Les résultats (score, label, probabilités) sont renvoyés en JSON et peuvent être agrégés côté client (Streamlit ou scripts d'économétrie) pour produire des séries temporelles de sentiment et les confronter aux prix. Les seuils utilisés pour trancher entre Bullish, Bearish et Neutral (par exemple \texttt{score > 0.05} pour Bullish, \texttt{score < -0.05} pour Bearish en FinBERT) sont fixés dans le code et pourraient être rendus configurables pour des expériences d'évaluation sur des jeux de données labellisés (par exemple StockTwits).
+
+\newpage
+%==============================================================================
+\section{Outil / Dashboard}
+\label{sec:outil}
+%==============================================================================
+
+\subsection{Présentation et utilisation}
+
+En complément de l'API REST, le projet propose un \textbf{dashboard Streamlit} (\textit{Crypto Sentiment Dashboard}) : une application web interactive qui permet d'effectuer l'ensemble des opérations (scraping, consultation des données, analyse de sentiment, comparaison des modèles, export) sans passer par des appels HTTP directs. L'utilisateur choisit la source (Reddit, Twitter, StockTwits, Telegram, etc.), la méthode (HTTP, Selenium, API selon la source), la limite de posts et lance le scrape ; les posts sont automatiquement sauvegardés en base. La page \textbf{Données} affiche les statistiques (nombre total de posts, premier et dernier scrape), des graphiques (répartition par source, par source et méthode, évolution temporelle des posts ajoutés, distribution des dates de publication), la consultation des posts avec filtres et les exports CSV/JSON. La page \textbf{Analyses} permet de lancer une analyse de sentiment (FinBERT ou CryptoBERT) sur les posts en base, avec filtres par source et nombre de posts, et d'afficher les résultats sous forme de graphiques (répartition des labels, distribution des scores) et de tableaux. Une page \textbf{Comparer les modèles} permet de saisir un texte et d'obtenir en direct la sortie FinBERT et CryptoBERT côte à côte. Une page \textbf{Documentation} décrit la méthodologie, les sources, les modèles et les références.
+
+\medskip
+\subsection{Intérêt du dashboard par rapport à l'API}
+
+Utiliser le dashboard plutôt que l'API présente plusieurs avantages pour un usage quotidien ou pour des démonstrations. D'abord, \textbf{aucune connaissance technique des endpoints} n'est requise : les formulaires (sélecteurs, sliders, boutons) guident l'utilisateur et construisent en interne les paramètres et les requêtes. Ensuite, les \textbf{résultats sont visualisés immédiatement} (graphiques Plotly, tableaux, métriques) sans avoir à parser du JSON ou à écrire un script. Le dashboard convient donc aux utilisateurs non développeurs (enseignants, partenaires, évaluation du projet) et aux démos en direct. Enfin, le \textbf{même backend} (base de données, scrapers, modèles NLP) est partagé : le dashboard appelle en interne les mêmes fonctions que l'API (stockage, récupération des posts, analyse), de sorte que les données collectées ou analysées via l'interface sont identiques à celles accessibles via \texttt{POST /scrape} ou \texttt{POST /analyze}. L'API reste néanmoins indispensable pour l'\textbf{automatisation} (scripts, cron, pipelines), l'\textbf{intégration} avec d'autres outils (notebooks, logiciels d'économétrie) et les utilisateurs qui préfèrent une interface programmatique. En résumé : le dashboard sert à l'utilisation interactive et à la démonstration ; l'API sert à l'intégration et à l'automatisation.
+
+\newpage
+%==============================================================================
+\section{Conclusion}
+%==============================================================================
+
+Ce rapport a présenté les méthodes de scraping (HTTP, Selenium, APIs), l'API REST FastAPI et ses endpoints (scraping, stockage, sentiment, comparaison), la base de données (SQLite en local, PostgreSQL en cloud, schéma de la table \texttt{posts}) et les modèles FinBERT et CryptoBERT pour l'analyse de sentiment. Le pipeline Sources, Scrapers, Base et NLP est opérationnel via l'API et l'interface Streamlit ; les données collectées alimentent les analyses de sentiment et peuvent être exportées (CSV/JSON) pour des traitements externes ou des régressions économétriques. L'outil dashboard (section~\ref{sec:outil}) permet une utilisation interactive sans passer par l'API.
+
+\medskip
+Les limites principales sont la dépendance à Selenium et Chrome pour Twitter et StockTwits, les blocages fréquents (anti-bot, Cloudflare) et la volumétrie ou qualité variable des données selon les sources. La comparaison FinBERT vs CryptoBERT sur des posts labellisés (StockTwits) permettrait de quantifier l'apport de la spécialisation au domaine crypto. Les pistes d'amélioration incluent l'ajout de sources (Discord, YouTube commentaires), le fine-tuning de CryptoBERT sur notre propre corpus, le déploiement sur Render ou Streamlit Cloud et le renforcement du volet économétrique (lien sentiment--prix, séries temporelles agrégées).
+
+\end{document}

@@ -1,0 +1,387 @@
+% Rapport détaillé : partie Scraping
+% Projet Crypto Sentiment Analysis — MoSEF 2025-2026
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small, breaklines=true, frame=single, numbers=left}
+
+\begin{document}
+\begin{titlepage}
+\thispagestyle{empty}
+\centering
+\vspace*{1.5cm}
+{\LARGE \textbf{Université Paris 1 Panthéon-Sorbonne}\\[0.5em]}
+{\large École d'économie de la Sorbonne\\Master MoSEF}\\[2cm]
+\rule{\textwidth}{0.5pt}\\[0.8em]
+{\Huge \textbf{Scrapping}\\[0.6em]}
+\rule{\textwidth}{0.5pt}\\[2cm]
+{\large Rapport de projet}\\[1.2cm]
+{\large \textbf{Projet MoSEF 2025--2026}}\\[0.5em]
+{\large Groupe 10}\\[2cm]
+{\large \today}\\[0.5em]
+\vfill
+{\normalsize Université Paris 1 Panthéon-Sorbonne\\106--112 boulevard de l'Hôpital, 75013 Paris}
+\end{titlepage}
+
+
+
+%==============================================================================
+\section{Vue d'ensemble}
+%==============================================================================
+
+L'objectif de la partie scraping est de collecter des posts texte (titres, commentaires, messages) issus de plusieurs plateformes en ligne, afin d'alimenter ensuite un pipeline d'analyse de sentiment appliqué au domaine crypto. Plus les sources sont variées (réseaux sociaux, forums, messageries), plus les modèles de sentiment peuvent s'appuyer sur un corpus riche et représentatif. 
+
+\medskip 
+
+Pour chaque plateforme, le choix de la méthode dépend de la façon dont elle expose ses données. Lorsqu'elle propose une \emph{API officielle} (une interface prévue pour que des programmes récupèrent des données de façon structurée) on l'utilise en priorité, ou bien des \emph{requêtes HTTP directes} vers des adresses qui renvoient déjà du JSON ou du HTML simple~: dans les deux cas, le serveur nous envoie directement des données exploitables, sans avoir à «~simuler un utilisateur~». 
+
+\medskip 
+
+En revanche, lorsque la plateforme n'offre pas d'API ou que la page web ne contient les posts qu'après exécution de scripts dans le navigateur (contenu \emph{dynamique}), une simple requête HTTP ne récupère qu'une page vide ou incomplète. On a alors recours au \emph{scraping de pages HTML}, et si le contenu dépend du JavaScript côté client, à un \emph{navigateur automatisé} (Selenium)~: un logiciel pilote un vrai navigateur (Chrome en mode «~sans fenêtre~») qui charge la page comme un utilisateur, exécute le JavaScript, puis on extrait le texte affiché. En résumé, on privilégie toujours la méthode la plus simple et la plus stable (API ou HTTP) et l'on ne bascule vers Selenium que lorsque c'est nécessaire.
+
+\medskip 
+
+Les trois familles de méthodes utilisées sont les suivantes~:
+\begin{itemize}
+  \item \textbf{Objectif} : collecter des posts texte (titres, commentaires, messages) liés à la crypto sur plusieurs plateformes, pour alimenter l'analyse de sentiment (FinBERT / CryptoBERT).
+  \item \textbf{Méthodes} :
+  \begin{itemize}
+    \item \textbf{HTTP} : requêtes \texttt{requests.get()} sur des URLs qui renvoient du JSON ou du HTML ; pas de navigateur.
+    \item \textbf{Selenium} : automate Chrome (headless) qui charge les pages comme un utilisateur ; utilisé quand il n'y a pas d'API ou que la page est dynamique (JavaScript).
+    \item \textbf{API} : utilisation des API officielles de la plateforme (clé API ou token si nécessaire).
+  \end{itemize}
+  \item \textbf{Sauvegarde} : après chaque collecte, les posts sont enregistrés en base (SQLite ou PostgreSQL) via \texttt{save\_posts()}.
+\end{itemize}
+
+\medskip 
+
+Après chaque collecte, les posts sont enregistrés en base via \texttt{save\_posts()} pour alimenter le dashboard et les modèles NLP, et pour éviter toute perte de données en cas d'interruption.
+
+
+
+\newpage
+
+%==============================================================================
+\newpage
+\section{Reddit}
+%==============================================================================
+
+Reddit est l'une des sources les plus simples à exploiter. Le site propose en effet une \emph{version JSON} de ses pages~: au lieu d'une page web destinée à l'affichage dans un navigateur, on peut demander les mêmes contenus sous forme de données structurées (JSON), faciles à lire par un programme, et ce sans avoir à se connecter. En cas de blocage ou d'indisponibilité de cette interface, on bascule sur un scraping classique avec un navigateur automatisé (Selenium).
+
+\subsection{Méthode}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{HTTP (recommandé)} : on envoie des requêtes directes vers une adresse Reddit qui renvoie du JSON~; le serveur nous répond avec les posts déjà formatés, sans ouvrir de page web.
+  \item \textbf{Selenium (secours)} : si la méthode HTTP échoue (blocage, adresse injoignable, etc.), on utilise un navigateur Chrome lancé «~en arrière-plan~» (sans fenêtre visible) pour charger la page comme un utilisateur, puis on extrait le texte affiché en analysant le code HTML de la page.
+\end{itemize}
+
+\subsubsection{HTTP}
+On envoie des \emph{requêtes GET} vers une adresse précise~: une requête GET signifie simplement «~donne-moi le contenu de cette adresse~», sans envoyer de formulaire ni de données. L'adresse utilisée est \texttt{old.reddit.com/r/\{subreddit\}/new.json} (on remplace \texttt{\{subreddit\}} par le nom du forum, par exemple \texttt{cryptocurrency})~; le \texttt{.json} à la fin indique à Reddit que l'on souhaite recevoir les données en format structuré. En secours, si cette adresse ne répond pas, on utilise \texttt{www.reddit.com}. Le déroulé est le suivant~:
+\begin{enumerate}
+  \item \textbf{Adresse} : \texttt{https://old.reddit.com/r/\{subreddit\}/new.json} (ou \texttt{www.reddit.com} si \texttt{old.reddit.com} ne répond pas).
+  \item \textbf{En-têtes (headers)} : on indique un \texttt{User-Agent} qui ressemble à celui d'un navigateur classique (ex.\ \texttt{Mozilla/5.0 Chrome/120.0.0.0}). Cela permet d'éviter que Reddit nous prenne pour un script suspect et bloque la requête.
+  \item \textbf{Paramètres} : \texttt{limit=100} demande jusqu'à 100 posts par requête~; \texttt{after=\{id\}} indique «~donne-moi les posts \emph{après} celui dont l'identifiant est \{id\}~». Ainsi on récupère les posts page par page (\emph{pagination}) sans tout charger d'un coup.
+  \item \textbf{Réponse} : Reddit renvoie un objet JSON. Les posts se trouvent dans \texttt{data.children}~; chaque élément contient notamment \texttt{id}, \texttt{title}, \texttt{selftext} (le corps du post), \texttt{score} (votes), \texttt{created\_utc} (date de création). On lit ces champs et on les range dans une structure uniforme (liste de «~dictionnaires~» : id, titre, texte, score, date, source=\texttt{reddit}, méthode=\texttt{http}).
+  \item On enchaîne les requêtes en mettant à jour \texttt{after} avec l'id du dernier post, jusqu'à atteindre le nombre voulu ou la fin des posts disponibles.
+  \item \textbf{Délai} : on attend environ 0,3\,s entre chaque requête pour ne pas surcharger le serveur et limiter le risque de blocage.
+\end{enumerate}
+
+\subsubsection{Selenium}
+En secours, on lance un navigateur Chrome \emph{en mode headless} (sans fenêtre visible, il tourne en arrière-plan), on charge la page web habituelle de la liste des posts, puis on \emph{parse} le HTML~: on analyse le code de la page pour en extraire les blocs qui correspondent à chaque post. On utilise pour cela la bibliothèque BeautifulSoup, qui permet de repérer des éléments grâce à des \emph{sélecteurs} (par exemple «~toutes les \texttt{div} de classe \texttt{thing link}~» correspondent à un post). Concrètement~:
+\begin{enumerate}
+  \item Chrome en mode headless, avec des options dites \emph{anti-détection}~: on désactive le flag \texttt{AutomationControlled} et on utilise un User-Agent aléatoire pour que le site ait plus de mal à identifier un robot.
+  \item On ouvre l'adresse classique \texttt{https://old.reddit.com/r/\{subreddit\}/new/} (la même que verrait un utilisateur).
+  \item On fait défiler la page un peu (scroll) pour s'assurer que le contenu est bien chargé, puis on parse le HTML avec BeautifulSoup~: le sélecteur \texttt{div.thing.link} cible chaque post~; on ignore les posts épinglés ou promus (annonces).
+  \item Pour chaque post trouvé, on extrait l'identifiant (\texttt{data-fullname}), le titre, le score et la date.
+  \item On simule un clic sur le bouton «~next~» pour passer à la page suivante, et on répète jusqu'à atteindre la limite voulue ou l'absence de bouton suivant.
+\end{enumerate}
+
+Un filtre optionnel par date (\texttt{start\_date}, \texttt{end\_date}) peut être appliqué sur les posts collectés (en s'appuyant sur \texttt{created\_utc}).
+
+\subsection{Limites}
+En pratique, la méthode HTTP permet de récupérer jusqu'à environ 1000 posts, limite imposée par l'interface JSON de Reddit. La méthode Selenium, plus visible pour le site (car elle simule un vrai navigateur), est volontairement limitée à environ 200 posts pour rester discrète et éviter un blocage du compte ou de l'adresse IP.
+
+\newpage
+%=======================================
+%==============================================================================
+\newpage
+\section{Twitter / X}
+%==============================================================================
+
+Twitter (X) n'offre plus d'accès gratuit à ses données via une API officielle et renforce régulièrement ses \emph{protections anti-bot} (détection des programmes qui simulent un utilisateur). La stratégie retenue est d'utiliser un navigateur automatisé (Selenium) avec un compte connecté~: une fois identifié comme un utilisateur normal, on peut accéder à la \emph{recherche avancée} du site et collecter jusqu'à environ 2000 tweets. Sans compte valide, on se rabat sur une liste de \emph{profils publics} (comptes crypto connus dont la timeline est visible sans connexion) ou sur \textbf{Nitter}, un service tiers qui affiche le contenu de X sous forme de pages plus simples à lire par un programme~; Nitter reste toutefois peu fiable car ses serveurs (\emph{instances}) sont souvent indisponibles ou bloqués par X.
+
+\subsection{Méthode}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Selenium avec connexion} (recommandé si on dispose d'identifiants) : on se connecte au compte (ou on charge des \emph{cookies} sauvegardés d'une session précédente, ce qui évite de ressaisir mot de passe à chaque fois), puis on utilise la recherche avancée du site et on fait défiler la page (scroll) pour charger et extraire les tweets.
+  \item \textbf{Sans connexion} : en secours, on se contente de \textbf{profils publics} (liste de comptes crypto prédéfinis, par ex.\ Whale\_Alert, CoinDesk, Michael Saylor, VitalikButerin)~; on charge la page de chaque compte et on extrait les tweets visibles, sans pouvoir faire de recherche par mot-clé.
+  \item \textbf{Nitter} (flux RSS ou requêtes HTTP) : prévu en dernier recours mais \textbf{peu fiable} (instances souvent down ou bloquées)~; en pratique on privilégie les profils publics ou la connexion avec un compte.
+\end{itemize}
+
+
+\subsubsection{Avec connexion (login)}
+On lance Chrome en mode \emph{headless} (sans fenêtre visible) avec un \emph{profil temporaire} (dossier de configuration vierge, pour ne pas mélanger avec une session personnelle) et des \emph{options anti-détection}~: on fait en sorte que le navigateur se présente comme un vrai utilisateur (User-Agent réaliste, masquage du flag \texttt{navigator.webdriver} qui signale un automate). Si des \emph{cookies} ont été sauvegardés lors d'une précédente connexion (fichier \texttt{data/twitter\_cookies.json}), on les charge sur \texttt{x.com} pour reprendre la session sans ressaisir le mot de passe~; sinon on effectue une connexion manuelle (identifiant puis mot de passe) avec des délais aléatoires entre les clics pour imiter un humain. Une fois connecté, on construit l'adresse (URL) de la recherche avancée avec les paramètres voulus, puis on fait défiler la page et on analyse le HTML à chaque étape pour extraire les tweets. Le détail est le suivant~:
+\begin{enumerate}
+  \item Chrome en mode headless, profil temporaire, options anti-détection (navigator.webdriver masqué, User-Agent réaliste) pour réduire le risque que X détecte un robot.
+  \item Si des cookies existent (\texttt{data/twitter\_cookies.json}), on les charge sur \texttt{https://x.com}~; sinon on fait une connexion classique (saisie du nom d'utilisateur puis du mot de passe, clics sur Next / Log in) avec des délais aléatoires entre chaque action pour imiter un humain.
+  \item Vérification que la connexion a réussi (présence de «~Home~», «~Post~», etc.\ dans la page).
+  \item Construction de l'URL de \textbf{recherche avancée}~: on ajoute les paramètres dans l'adresse (\texttt{q} pour la requête, \texttt{min\_replies} et \texttt{min\_faves} pour filtrer, \texttt{since} et \texttt{until} pour la période, tri \texttt{top} ou \texttt{live}).
+  \item On charge cette URL, puis on \textbf{fait défiler} la page (scroll) plusieurs fois pour charger plus de tweets~; à chaque fois on parse le HTML avec BeautifulSoup en ciblant les blocs qui correspondent à un tweet (\texttt{article[data-testid='tweet']}), et on extrait le texte (\texttt{data-testid='tweetText'}), l'identifiant du tweet (lien \texttt{/status/...}), les likes, retweets, la date et le nom d'utilisateur.
+  \item On fait une pause plus longue tous les 20 scrolls pour limiter la détection~; on s'arrête quand on a assez de tweets ou qu'il n'y a plus de nouveaux contenus.
+\end{enumerate}
+
+\subsubsection{Sans connexion (profils publics)}
+\begin{enumerate}
+  \item On dispose d'une liste de comptes crypto selon le thème (ex.\ BTC $\to$ saborskater, michael\_saylor, etc.).
+  \item Pour chaque compte~: on charge la page \texttt{https://x.com/\{username\}}, on vérifie que le profil existe et qu'il n'est pas caché derrière une demande de connexion (\emph{mur de login}), puis on fait défiler la page et on extrait les tweets de la même façon qu'avec la recherche (scroll + parse du HTML).
+\end{enumerate}
+
+\subsubsection{Nitter (secours)}
+En dernier recours, on tente plusieurs \emph{instances} Nitter (nitter.poast.org, nitter.space, etc.)~: ce sont des serveurs tiers qui affichent le contenu de X sous forme de pages HTML plus simples. On peut soit récupérer un \emph{flux RSS} (format de syndication qui liste les derniers tweets d'une recherche), soit charger la page HTML et parser les blocs qui contiennent un tweet (\texttt{.timeline-item} ou \texttt{.tweet-body}). Si une instance répond et renvoie des tweets, on les utilise~; sinon on reste sur les profils publics.
+
+\subsection{Limites et contraintes}
+En résumé~:
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Avec connexion} : jusqu'à environ \textbf{2000 tweets} (limite configurée). Cela dépend fortement des changements anti-bot de X~: détection du type de navigateur, \emph{rate limits} (limitation du nombre de requêtes ou d'actions par période), double authentification (2FA), etc.
+  \item \textbf{Sans connexion} : environ \textbf{100 tweets} (quelques comptes, peu de scroll par profil pour rester discret).
+  \item \textbf{Contraintes pratiques} : il faut fermer toutes les fenêtres Chrome avant de lancer un scrape Selenium pour éviter que le \emph{driver} (le programme qui pilote le navigateur) se branche sur une session déjà ouverte. X modifie souvent la structure de ses pages (sélecteurs HTML) et renforce ses protections~; le code peut donc nécessiter des mises à jour lorsque le site change.
+\end{itemize}
+
+%==============================================================================
+\newpage
+\section{StockTwits}
+%==============================================================================
+
+StockTwits ne propose pas d'API publique pratique pour récupérer les messages. Le site est construit avec \emph{Next.js} (framework qui génère des pages en JavaScript côté client) et peut être protégé par \emph{Cloudflare} (service qui filtre les accès et peut afficher une vérification avant d'afficher la page). On utilise donc uniquement un navigateur automatisé (Selenium)~: on charge la page avec Chrome, on laisse le JavaScript s'exécuter (et éventuellement passer la vérification Cloudflare), puis on extrait les données soit depuis du \emph{JSON embarqué} (données structurées incluses dans le code de la page sous la balise \texttt{\_\_NEXT\_DATA\_\_}), soit en analysant le HTML après avoir fait défiler la page.
+
+\subsection{Méthode}
+La méthode retenue est \textbf{Selenium uniquement}~: pas d'API publique~; le site repose sur du JavaScript (Next.js) et peut être protégé (Cloudflare). On charge la page avec Chrome, on laisse le JavaScript s'exécuter, puis on extrait les données soit depuis le JSON embarqué (\texttt{\_\_NEXT\_DATA\_\_}), soit depuis le HTML en ciblant les blocs qui correspondent à un message.
+
+\subsection{Comment c'est fait techniquement}
+Le déroulé typique est le suivant~:
+\begin{enumerate}
+  \item Chrome en mode headless (sans fenêtre), avec un profil temporaire et des options anti-détection (User-Agent réaliste, désactivation du flag AutomationControlled) pour limiter la détection.
+  \item On ouvre l'adresse \texttt{https://stocktwits.com/symbol/\{symbol\}} (ex.\ \texttt{BTC.X}, \texttt{ETH.X} pour le symbole affiché).
+  \item On attend 5 à 8 secondes (aléatoires) pour laisser Cloudflare et le rendu Next.js s'exécuter avant d'extraire quoi que ce soit.
+  \item \textbf{Extraction depuis le JSON embarqué} : dans le code HTML de la page, on cherche la balise \texttt{<script id="\_\_NEXT\_DATA\_\_">}~; son contenu est du JSON. On le parse et on navigue dans la structure (\texttt{props.pageProps}, puis \texttt{stream.messages} ou \texttt{initialMessages}) pour récupérer chaque message. Chaque message contient notamment \texttt{id}, \texttt{body} (texte), \texttt{created\_at}, \texttt{likes}, et surtout le \textbf{sentiment} dans \texttt{entities.sentiment.basic} (Bullish / Bearish)~: c'est une étiquette posée par l'utilisateur. On convertit tout ça vers notre format commun (id, titre, texte, score, date, source=\texttt{stocktwits}, method=\texttt{selenium}, \textbf{human\_label}).
+  \item Si le JSON ne suffit pas pour atteindre la limite voulue, on fait défiler la page (scroll) et on parse le HTML avec des sélecteurs qui ciblent les cartes de message (\texttt{article}, \texttt{[class*='MessageCard']})~; on extrait le texte, les likes, et on détecte Bullish/Bearish depuis les classes ou le texte affiché.
+  \item On supprime les doublons par id, on applique un filtre optionnel par date, et on retourne les posts jusqu'à la limite demandée.
+\end{enumerate}
+
+\subsection{Limites et particularités}
+\begin{itemize}[leftmargin=*]
+  \item Limite configurée : environ \textbf{1000 posts} (méthode Selenium).
+  \item \textbf{Particularité importante} : StockTwits est la \textbf{seule source} du projet qui fournit des \textbf{labels humains} (Bullish / Bearish) directement sur les messages~; ces étiquettes sont utilisées pour évaluer les modèles NLP (FinBERT, CryptoBERT), car on peut comparer la prédiction du modèle au jugement réel de l'utilisateur.
+\end{itemize}
+
+%==============================================================================
+\newpage
+\section{YouTube}
+%==============================================================================
+
+Pour YouTube, la méthode recommandée est l'utilisation de l'API officielle (\emph{YouTube Data API v3}). Une \emph{clé API} gratuite peut être créée sur \textbf{Google Cloud Console} (création d'un projet, activation de «~YouTube Data API v3~», puis création d'identifiants de type «~Clé API~»)~: cette clé permet d'envoyer des requêtes à l'API en s'identifiant. En l'absence de clé, on utilise un navigateur automatisé (Selenium) pour faire une recherche, ouvrir chaque vidéo et extraire les commentaires en faisant défiler la page pour déclencher leur chargement (\emph{lazy-loading}~: les commentaires ne s'affichent qu'au scroll).
+
+\subsection{Méthode}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{API (recommandé)} : YouTube Data API v3~; clé API gratuite obtenue sur Google Cloud Console (création de projet, activation de «~YouTube Data API v3~», création d'identifiants «~Clé API~»). Les requêtes sont envoyées directement au serveur, sans ouvrir de page web.
+  \item \textbf{Selenium (secours)} : si on n'a pas de clé API, on fait une recherche YouTube dans un navigateur automatisé, on récupère les liens des vidéos, puis on ouvre chaque vidéo et on fait défiler pour charger les commentaires avant de les extraire en analysant le HTML.
+\end{itemize}
+
+\subsection{Comment c'est fait techniquement}
+
+\subsubsection{API}
+On utilise la bibliothèque officielle Google \texttt{googleapiclient.discovery} pour appeler deux types de requêtes~: d'abord \texttt{search.list} pour récupérer les identifiants des vidéos (\texttt{videoId}), puis \texttt{commentThreads.list} pour chaque vidéo afin de récupérer les commentaires. Le détail est le suivant~:
+\begin{enumerate}
+  \item On initialise le client API avec la clé~: \texttt{googleapiclient.discovery.build('youtube', 'v3', developerKey=api\_key)}.
+  \item \textbf{Étape 1 -- Recherche} : on appelle \texttt{search.list} avec la requête (\texttt{q}), le type \texttt{video}, le nombre max de résultats (ex.\ 25), et optionnellement des dates (\texttt{publishedAfter} / \texttt{publishedBefore}) pour filtrer. On récupère les \texttt{videoId} (identifiant unique de chaque vidéo).
+  \item \textbf{Étape 2 -- Commentaires} : pour chaque vidéo, on appelle \texttt{commentThreads.list} avec le \texttt{videoId}, \texttt{part=snippet} (pour obtenir le texte et les métadonnées), \texttt{maxResults=100}, l'ordre (\texttt{relevance} ou \texttt{time}), et \texttt{pageToken} pour passer à la page suivante (pagination). Chaque élément contient le commentaire et son \emph{snippet} (texte, auteur, likes, date). On convertit le tout en format commun (id, titre, texte, score=likes, date, auteur, source=\texttt{youtube}, method=\texttt{api}).
+  \item On respecte un délai court (0,1 à 1\,s) entre chaque appel pour ne pas dépasser le \emph{quota} (nombre d'unités allouées par jour).
+\end{enumerate}
+
+\subsubsection{Selenium}
+\begin{enumerate}
+  \item On charge la page de recherche \texttt{https://www.youtube.com/results?search\_query=...}, on parse le HTML pour récupérer les liens des vidéos (\texttt{/watch?v=...}).
+  \item Pour chaque vidéo : on charge l'URL de la vidéo, on fait défiler plusieurs fois pour déclencher le chargement des commentaires (lazy-loading), puis on parse le HTML en ciblant les blocs de commentaires (\texttt{ytd-comment-renderer} ou \texttt{\#content-text}) pour extraire le texte, les likes, l'auteur et la date. En secours, on peut aussi extraire le texte des commentaires depuis du JSON embarqué dans la page (regex).
+\end{enumerate}
+
+\subsection{Limites}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{API} : le quota gratuit est d'environ \textbf{10\,000 unités/jour}~; chaque lecture de commentaires consomme des unités. En pratique on reste sous \textbf{500 commentaires} par exécution pour ne pas épuiser le quota.
+  \item \textbf{Selenium} : environ \textbf{100 commentaires} (plus lent, et la structure HTML de YouTube peut changer, ce qui peut casser les sélecteurs).
+\end{itemize}
+
+%==============================================================================
+\newpage
+\section{Telegram}
+%==============================================================================
+
+Telegram permet de créer des \emph{canaux} publics~: des flux de messages auxquels n'importe qui peut s'abonner. Pour les canaux publics, Telegram expose une page web de prévisualisation à l'adresse \texttt{t.me/s/\{channel\}} (on remplace \texttt{\{channel\}} par le nom du canal, par ex.\ \texttt{bitcoinnews}). Cette page renvoie du HTML avec les derniers messages, \emph{sans nécessiter de compte Telegram ni de clé API}. On peut donc scraper les canaux crypto (actualités, whale alerts, communautés) avec de simples requêtes HTTP. En mode \emph{simple}, une seule requête suffit et on récupère ce qui est affiché sur la première page (environ 30 messages). Pour aller plus loin, on utilise la \emph{pagination}~: Telegram charge les messages plus anciens via des requêtes \emph{AJAX} (requêtes envoyées en arrière-plan par la page lorsqu'on «~remonte~» dans l'historique)~; on peut simuler cela avec un paramètre \texttt{before} dans l'URL ou en suivant les liens de pagination. Si l'on souhaite encore plus de messages ou contourner des limites d'affichage, on peut recourir à Selenium (navigateur automatisé qui charge la page et fait défiler pour déclencher le chargement dynamique).
+
+\subsection{Méthode}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{HTTP simple} : une seule requête GET vers \texttt{https://t.me/s/\{channel\}}~; le serveur renvoie le HTML de la première page avec les derniers messages. Aucun compte ni clé API nécessaires.
+  \item \textbf{HTTP avec pagination} : on enchaîne les requêtes en utilisant un paramètre \texttt{before} (ou un lien «~load older~») pour demander les messages plus anciens~; on répète jusqu'à atteindre la limite voulue ou la fin de l'historique disponible.
+  \item \textbf{Selenium} : on charge la même URL dans un navigateur automatisé, on fait défiler la page (scroll) pour déclencher le chargement des messages plus anciens, puis on extrait le HTML et on parse les blocs de message.
+\end{itemize}
+
+\subsection{Comment c'est fait techniquement}
+
+\subsubsection{HTTP simple}
+Une seule requête GET suffit («~donne-moi le contenu de cette adresse~»). On envoie \texttt{requests.get("https://t.me/s/\{channel\}", headers=...)} avec un \texttt{User-Agent} type navigateur et éventuellement \texttt{Accept-Language}. Le serveur renvoie le HTML de la page. Avec BeautifulSoup, on cherche tous les blocs qui correspondent à un message~: le sélecteur \texttt{div.tgme\_widget\_message\_wrap} cible chaque message. Pour chaque bloc, on extrait~: le texte du message (\texttt{div.tgme\_widget\_message\_text}), la date (\texttt{time} avec attribut \texttt{datetime}), les vues (\texttt{span.tgme\_widget\_message\_views}). On nettoie le texte (espaces, caractères indésirables) et on formate en dictionnaire (texte, date, vues, canal, source=\texttt{telegram}). Aucune connexion Telegram n'est requise.
+
+\subsubsection{HTTP avec pagination}
+Pour récupérer plus de messages, on utilise le fait que Telegram propose un chargement «~plus ancien~»~: en ajoutant un paramètre \texttt{before} (ou en suivant l'URL de la page précédente fournie dans le HTML), on peut demander une nouvelle page HTML avec les messages précédents. On enchaîne ainsi les requêtes en mettant à jour \texttt{before} avec l'identifiant du dernier message récupéré, jusqu'à atteindre le nombre max de messages (ex.\ 2000) ou jusqu'à ce qu'il n'y ait plus de page suivante. Les en-têtes (\texttt{User-Agent}, \texttt{Referer}) restent les mêmes pour que le serveur nous renvoie du HTML cohérent.
+
+\subsubsection{Selenium (optionnel)}
+Si on veut encore plus de messages ou si la pagination HTTP ne suffit pas, on lance Chrome en mode headless, on charge \texttt{https://t.me/s/\{channel\}}, on fait défiler la page plusieurs fois pour déclencher le chargement des messages plus anciens (comportement dynamique de la page), puis on parse le HTML avec BeautifulSoup de la même façon qu'en mode simple. Cette méthode est plus lourde mais peut permettre d'atteindre plusieurs milliers de messages.
+
+\subsection{Limites}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Simple} : environ \textbf{30} messages (ce qui tient sur la première page renvoyée par le serveur).
+  \item \textbf{Paginé} : jusqu'à environ \textbf{2000} messages (limite configurée~; l'historique du canal peut être plus long).
+  \item \textbf{Selenium} : jusqu'à environ \textbf{5000} (si implémenté et utilisé~; dépend du temps de scroll et des limites d'affichage côté Telegram).
+\end{itemize}
+
+%==============================================================================
+\newpage
+\section{4chan (/biz/)}
+%==============================================================================
+
+4chan est un forum imageboard anonyme organisé en \emph{boards} (sections thématiques). Le board \texttt{/biz/} (Business \& Finance) est l'un des plus actifs sur la crypto et la finance~: les utilisateurs y discutent de bitcoin, d'altcoins et de trading. 4chan expose une \emph{API JSON publique} documentée~: sans compte ni clé API, on peut récupérer la liste des \emph{threads} (sujets de discussion) puis, pour chaque thread, la liste des \emph{posts} (messages) sous forme de JSON. Le scraping se fait donc entièrement en requêtes HTTP, sans navigateur automatisé. Les données sont déjà structurées~; il suffit de nettoyer le HTML contenu dans le corps des messages et de filtrer par mots-clés crypto pour ne garder que les posts pertinents.
+
+\subsection{Méthode}
+On utilise \textbf{HTTP uniquement}~: l'API JSON de 4chan permet de récupérer la liste des threads du board \texttt{/biz/}, puis pour chaque thread la liste des posts. Tout se fait par des requêtes GET vers des adresses qui renvoient du JSON~; aucune authentification n'est requise.
+
+
+\medskip
+Pour éviter d'être bloqué, on envoie des \emph{en-têtes} (headers) qui font ressembler la requête à celle d'un navigateur~: \texttt{User-Agent} (ex.\ Mozilla/5.0...), \texttt{Accept: application/json}, \texttt{Referer: https://boards.4chan.org/biz/}. Les adresses utilisées sont celles de l'API officielle 4chan (domaine \texttt{a.4cdn.org} ou \texttt{a.4chan.org} selon les miroirs).
+
+\medskip
+On envoie une requête GET vers \texttt{https://a.4cdn.org/biz/threads.json} (ou \texttt{a.4chan.org}). La réponse est un tableau JSON~: chaque élément représente une \emph{page} du board. Chaque page contient un champ \texttt{threads}~: une liste d'objets, chacun avec notamment \texttt{no} (numéro unique du thread). On parcourt ces pages et on collecte les numéros de thread pour la suite.
+
+\medskip
+Pour chaque thread (jusqu'à atteindre la limite de posts voulue), on envoie :\\ \texttt{GET https://a.4cdn.org/biz/thread/\{thread\_no\}.json}. La réponse est un objet JSON avec un champ \texttt{posts}~: liste de messages. Chaque post contient \texttt{no} (id du message), \texttt{com} (corps du message en HTML), \texttt{replies} (nombre de réponses), \texttt{time} (timestamp Unix), \texttt{name} (pseudo éventuel), etc. On ne garde que les posts dont le champ \texttt{com} est non vide.
+
+\medskip
+Le champ \texttt{com} contient du HTML (balises, guillemets encodés \&quot;, \&amp;, etc.). On supprime les balises avec une expression régulière ou un parseur HTML, et on décode les entités (\&quot; $\to$ guillemet, \&amp; $\to$ \&). Ensuite on filtre par mots-clés crypto (bitcoin, btc, ethereum, solana, defi, etc.)~: seuls les posts dont le texte contient au moins un de ces mots sont conservés. On convertit chaque post en format commun~: id (\texttt{no}), titre (extrait du texte), texte, score (\texttt{replies}), date (dérivée de \texttt{time}), source=\texttt{4chan}, method=\texttt{http}.
+
+\medskip
+Un délai d'environ 0,5\,s entre chaque requête de thread permet d'éviter d'être \emph{throttlé} (ralenti ou bloqué par le serveur) et de rester courtois envers l'infrastructure 4chan.
+
+\subsection{Limites}
+Environ \textbf{200 posts} par exécution (limite configurée dans le projet). L'API 4chan est permissive (pas de clé requise)~; on reste raisonnable en nombre de requêtes et en délais pour ne pas surcharger les serveurs.
+
+%==============================================================================
+\newpage
+\section{Bitcointalk}
+%==============================================================================
+
+Bitcointalk (\url{https://bitcointalk.org}) est un forum historique dédié au bitcoin et à la crypto, encore très actif. Il est entièrement en \emph{HTML classique}~: les pages sont générées côté serveur et renvoyées telles quelles~; il n'y a pas d'API publique ni de contenu chargé dynamiquement en JavaScript. Pour scraper le forum, on envoie des requêtes GET vers les pages des \emph{boards} (sections thématiques~: Bitcoin Discussion, Altcoins, Economics, etc.), on parse le HTML pour extraire les liens vers les \emph{topics} (sujets de discussion), puis pour chaque topic on charge la page du topic et on extrait les \emph{posts} (messages) en repérant les blocs HTML qui correspondent à un message. Toute l'extraction se fait avec BeautifulSoup et des sélecteurs CSS (classes, balises, attributs). Aucun compte ni clé API n'est nécessaire~; il suffit d'utiliser un \texttt{User-Agent} et un \texttt{Referer} pour éviter d'être bloqué.
+
+\subsection{Méthode}
+\textbf{HTTP uniquement}~: le forum renvoie des pages HTML statiques. On fait des requêtes GET vers les URLs des boards et des topics, puis on parse le HTML avec BeautifulSoup pour repérer les blocs qui correspondent à un post (\texttt{div.post} ou équivalent selon la structure du forum).
+
+
+\subsubsection{En-têtes et liste des boards}
+On utilise des en-têtes type navigateur~: \texttt{User-Agent} (ex.\ Mozilla/5.0 Chrome/...), \texttt{Accept}, \texttt{Accept-Language}, \texttt{Referer: https://bitcointalk.org/}. La liste des boards est fixe dans le code~: par exemple \texttt{index.php?board=1.0} (Bitcoin Discussion), \texttt{index.php?board=159.0} (Altcoins), \texttt{index.php?board=67.0} (Economics). Pour chaque board, on envoie une requête GET vers l'URL complète \texttt{https://bitcointalk.org/index.php?board=...}.
+
+\medskip 
+On parse le HTML de la page du board avec BeautifulSoup. Les topics (sujets de discussion) sont repérables par des cellules de tableau \texttt{td.subject} ou par des liens dont l'URL contient \texttt{topic=} (ex.\ \texttt{a[href*="topic="]}). Pour chaque lien trouvé, on récupère l'URL du topic et le titre (texte du lien). On filtre par mots-clés crypto (bitcoin, btc, ethereum, defi, altcoin, etc.)~: seuls les topics dont le titre contient au moins un de ces mots sont conservés pour la suite. On limite le nombre de topics parcourus par board (ex.\ 50) pour éviter de surcharger.
+
+\medskip 
+Pour chaque topic retenu, on envoie une requête GET vers l'URL du topic \\ (\texttt{https://bitcointalk.org/index.php?topic=123456.0}). Dans le HTML renvoyé, on cherche les blocs qui correspondent à un message~: typiquement \texttt{div.post} ou une structure similaire (table avec une classe spécifique). Chaque post a souvent un attribut \texttt{name} du type \texttt{msg123} (identifiant unique). On extrait~: l'id (attribut \texttt{name} ou équivalent), le corps du message (texte dans la zone de contenu du post), l'auteur (lien ou pseudo), la date. On peut appliquer un filtrage optionnel par mots-clés dans le contenu du post. On formate chaque post en dictionnaire commun~: id, titre (extrait du texte), texte, score (nombre de réponses ou réactions si disponible), auteur, date, source=\texttt{bitcointalk}, method=\texttt{http}.
+
+\medskip 
+Des délais sont respectés entre les requêtes pour limiter la charge sur le serveur et réduire le risque de blocage~: par exemple 1\,s entre chaque topic et 2\,s entre chaque board.
+
+\subsection{Limites}
+Environ \textbf{200 posts} par exécution (limite configurée dans le projet). La structure HTML du forum est stable mais peut évoluer lors de mises à jour du site~; si les noms de classes ou les balises changent, les sélecteurs BeautifulSoup doivent être adaptés dans le code.
+
+%==============================================================================
+\newpage
+\section{GitHub}
+%==============================================================================
+
+Pour GitHub, on s'appuie uniquement sur l'\emph{API REST} officielle (interface qui permet d'interroger le site par requêtes HTTP, sans ouvrir de page web). Les \emph{dépôts} cibles (bitcoin/bitcoin, ethereum/go-ethereum, solana-labs/solana, etc.) sont prédéfinis par crypto. On récupère les \emph{issues} (tickets de discussion : bugs, propositions, questions) de chaque dépôt (ouvertes et fermées), on filtre par mots-clés dans le titre et le corps, et on formate le tout en posts. Sans \emph{token} (identifiant secret), le quota est de 60 requêtes/heure~; avec une variable d'environnement \texttt{GITHUB\_TOKEN}, il passe à 5000 requêtes/heure.
+
+\subsection{Méthode}
+\textbf{API uniquement}~: on utilise l'API REST de GitHub (documentation officielle). Sans token d'authentification, on a 60 requêtes/heure~; avec un token (variable d'environnement \texttt{GITHUB\_TOKEN}), 5000 requêtes/heure.
+
+\subsection{Comment c'est fait techniquement}
+Le déroulé est le suivant~:
+\begin{enumerate}
+  \item \textbf{Dépôts cibles} : liste prédéfinie par crypto (ex.\ bitcoin/bitcoin, ethereum/go-ethereum, solana-labs/solana, etc.).
+  \item Pour chaque dépôt : on envoie une requête \\ GET vers \texttt{https://api.github.com/repos/\{owner\}/\{repo\}/issues} avec \texttt{per\_page=100} et \texttt{state=all} (ouvertes et fermées). On ajoute les en-têtes \\ \texttt{Accept: application/vnd.github+json}, \texttt{User-Agent}~; si \texttt{GITHUB\_TOKEN} est défini, on ajoute \texttt{Authorization: token \{token\}} pour s'authentifier et augmenter le quota.
+  \item Chaque \emph{issue} (ticket) est traitée : on extrait le titre, le corps (\texttt{body}), le nombre de commentaires, les réactions (likes, etc.), l'auteur, la date. On filtre par mots-clés (crypto, blockchain, nom de la crypto) dans le titre et le corps. On convertit en format commun : id (numéro d'issue), titre, texte (body), score (commentaires + réactions), source=\texttt{github}, method=\texttt{api}, url, dépôt.
+  \item En cas de réponse 403 (rate limit dépassé ou accès refusé), on arrête les requêtes pour cette exécution.
+\end{enumerate}
+
+\subsection{Limites}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Sans token} : 60 requêtes/heure~; en pratique on reste sous \textbf{200 issues} par exécution pour ne pas saturer le quota.
+  \item \textbf{Avec token} : 5000 requêtes/heure~; la limite de 200 issues par run est conservée dans le code pour rester raisonnable.
+\end{itemize}
+
+%==============================================================================
+\newpage
+\section{Bluesky}
+%==============================================================================
+
+Bluesky est un réseau social décentralisé qui repose sur le \emph{protocole AT} (Authenticated Transfer Protocol). La recherche de posts (par mot-clé, ex.\ «~bitcoin~» ou «~crypto~») peut se faire via une API publique ou via le \emph{SDK} \texttt{atproto} (ensemble de bibliothèques Python pour communiquer avec l'API Bluesky). En pratique, les requêtes \emph{sans authentification} vers l'API publique renvoient souvent un code \textbf{403} (accès refusé)~: Bluesky limite l'accès non authentifié pour éviter les abus. Il est donc recommandé de créer un compte sur \url{https://bsky.app}, puis dans Paramètres $\to$ App passwords de générer un \emph{mot de passe d'application}. Ce mot de passe permet de s'authentifier dans les requêtes sans utiliser son mot de passe principal et sans exposer celui-ci dans le code. Une fois connecté avec le SDK \texttt{atproto}, on peut appeler \texttt{search\_posts} pour récupérer les posts correspondant à une requête, avec pagination par \texttt{cursor} (jeton pour charger la page suivante).
+
+\subsection{Méthode}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{API avec compte (recommandé)} : on utilise le SDK \texttt{atproto}~: connexion avec le \emph{handle} (ex.\ \texttt{xxx.bsky.social}) et le mot de passe d'application, puis appel à \texttt{search\_posts}. L'authentification évite les réponses 403.
+  \item \textbf{API sans compte} : requêtes GET vers l'endpoint public (ex.\ \texttt{app.bsky.feed.searchPosts})~; souvent \textbf{403} (accès refusé), donc peu fiable pour un usage régulier.
+\end{itemize}
+
+\subsection{Comment c'est fait techniquement}
+
+\subsubsection{Avec compte (SDK atproto)}
+On utilise la bibliothèque Python \texttt{atproto}. On crée un \texttt{Client}, puis on appelle \texttt{client.login(username, password)} avec le handle Bluesky (format \texttt{xxx.bsky.social}) et le mot de passe d'application (généré dans Paramètres $\to$ App passwords sur bsky.app). Une fois connecté, on appelle \texttt{client.app.bsky.feed.search\_posts} en passant les paramètres suivants~: \texttt{q} (requête de recherche, ex.\ «~bitcoin~»), \texttt{limit} (nombre de posts par requête, ex.\ 100), \texttt{sort} (ex.\ \texttt{latest} pour les plus récents), et \texttt{cursor} pour la pagination (optionnel~: pour la première requête on ne le met pas~; la réponse contient un \texttt{cursor} qu'on renvoie pour obtenir la page suivante). La réponse contient une liste de posts. Chaque post a notamment~: \texttt{uri} (identifiant unique du post), \texttt{author} (objet avec \texttt{handle}, ex.\ \texttt{xxx.bsky.social}), \texttt{record} (objet avec \texttt{text} et \texttt{created\_at}), et éventuellement \texttt{like\_count}, \texttt{reply\_count} si exposés par l'API. On extrait ces champs et on convertit chaque post en format commun~: id (dérivé de \texttt{uri}), titre (extrait du texte), texte, score (likes + réponses), auteur (handle), date (\texttt{created\_at}), source=\texttt{bluesky}, method=\texttt{api}. On répète les appels en mettant à jour \texttt{cursor} jusqu'à atteindre la limite voulue ou l'absence de résultats. Un court délai (ex.\ 0,3\,s) entre chaque requête permet d'éviter de surcharger l'API.
+
+\subsubsection{Sans compte (API publique)}
+On peut tenter des requêtes GET vers l'endpoint public Bluesky (ex.\ \url{https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts}) en passant la requête \texttt{q} en paramètre. Sans en-tête d'authentification, l'API renvoie souvent un code HTTP 403 (Forbidden)~; cette méthode est donc peu fiable et sert surtout de secours ou pour des tests limités.
+
+\subsection{Limites}
+Environ \textbf{200 posts} par exécution (limite configurée dans le projet). Avec un compte, il n'y a pas de limite pratique forte côté code~; les limites réelles (rate limits, quotas) dépendent de Bluesky. En cas de dépassement, l'API peut renvoyer une erreur 429 (Too Many Requests)~; il suffit alors d'augmenter les délais entre requêtes.
+
+%==============================================================================
+\newpage
+\section{Synthèse des méthodes et limites}
+%==============================================================================
+
+Le tableau ci-dessous résume, pour chaque plateforme, la méthode principale utilisée, la méthode de secours éventuelle, la limite typique de posts par run et une remarque utile (clé API, labels humains, anti-bot, etc.).
+
+\begin{center}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lllll@{}}
+\toprule
+\textbf{Plateforme} & \textbf{Méthode principale} & \textbf{Méthode de secours} & \textbf{Limite typique} & \textbf{Remarque} \\
+\midrule
+Reddit & HTTP (JSON) & Selenium & HTTP $\sim$1000, Sel.\ $\sim$200 & Fallback Selenium si blocage \\
+Twitter & Selenium (login) & Profils publics, Nitter & Login $\sim$2000, sans $\sim$100 & Anti-bot récent ; Nitter instable \\
+StockTwits & Selenium & -- & $\sim$1000 & Labels Bullish/Bearish (humains) \\
+YouTube & API (clé Google) & Selenium & API $\sim$500, Sel.\ $\sim$100 & Clé API : Google Cloud Console \\
+Telegram & HTTP (simple/paginé) & Selenium & Simple 30, paginé 2000 & Pas de compte pour t.me/s/ \\
+4chan & HTTP (API JSON) & -- & $\sim$200 & API publique /biz/ \\
+Bitcointalk & HTTP (HTML) & -- & $\sim$200 & BeautifulSoup boards/topics \\
+GitHub & API (REST) & -- & $\sim$200 & Token optionnel (5000 req/h) \\
+Bluesky & API (atproto + compte) & API publique & $\sim$200 & Sans compte : souvent 403 \\
+\bottomrule
+\end{tabular}%
+}
+\end{center}
+
+%==============================================================================
+
+
+\end{document}

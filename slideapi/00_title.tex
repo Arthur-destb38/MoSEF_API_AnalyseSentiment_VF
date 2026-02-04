@@ -1,0 +1,45 @@
+% ---------- Page de titre ----------
+\begin{frame}
+  \titlepage
+  \end{frame}
+  
+  % ---------- Plan (avec icônes + schéma) ----------
+  \begin{frame}{Plan}
+  \vspace{0.2cm}
+  \begin{columns}[T,onlytextwidth]
+  \begin{column}{0.62\textwidth}
+  \begin{itemize}
+    \item[\textcolor{accent}{\faIcon{play-circle}}] \textbf{I. Introduction}
+    \vspace{0.15cm}
+    \item[\textcolor{accent}{\faIcon{cloud-download-alt}}] \textbf{II. Scraping}
+    \vspace{0.15cm}
+    \item[\textcolor{accent}{\faIcon{plug}}] \textbf{III. API}
+    \vspace{0.15cm}
+    \item[\textcolor{accent}{\faIcon{database}}] \textbf{IV. Donn\'ees et stockage}
+    \vspace{0.15cm}
+    \item[\textcolor{success}{\faIcon{brain}}] \textbf{V. Analyse NLP}
+    \vspace{0.15cm}
+    \item[\textcolor{success}{\faIcon{chart-line}}] \textbf{VI. Outil}
+    \vspace{0.15cm}
+    \item[\textcolor{accent}{\faIcon{flag-checkered}}] \textbf{VII. Conclusion}
+  \end{itemize}
+  \end{column}
+  \begin{column}{0.36\textwidth}
+  \centering
+  \vspace{0.5cm}
+  \textcolor{textsecondary}{\scriptsize Crypto sentiment}
+  \vspace{0.4cm}
+  \begin{tikzpicture}[
+    node distance=0.5cm,
+    logo/.style={draw=accent, line width=1.2pt, rounded corners=8pt, minimum width=1.5cm, minimum height=0.7cm, fill=bglight, align=center, font=\small\bfseries}
+  ]
+    \node[logo] (btc) {\faIcon{coins}\\[-4pt]\texttt{BTC}};
+    \node[logo, below=of btc] (eth) {\faIcon{coins}\\[-4pt]\texttt{ETH}};
+    \node[logo, below=of eth] (sol) {\faIcon{coins}\\[-4pt]\texttt{SOL}};
+  \end{tikzpicture}
+  \vspace{0.3cm}
+  \textcolor{textsecondary}{\tiny Bitcoin, Ethereum, etc.}
+  \end{column}
+  \end{columns}
+  \end{frame}
+  

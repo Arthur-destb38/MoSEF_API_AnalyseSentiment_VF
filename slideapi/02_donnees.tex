@@ -1,0 +1,80 @@
+% ============================================================
+% PARTIE DONNÉES / STOCKAGE
+% ============================================================
+
+\section{IV. Donn\'ees et stockage}
+
+% ---------- Slide 1 : Schéma et base ----------
+\begin{frame}{Donn\'ees et stockage -- Schéma}
+\vspace{0.15cm}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.48\textwidth}
+\centering
+\textbf{Base locale (SQLite)}
+
+\vspace{0.75cm}
+
+\begin{tikzpicture}[scale=0.85, node distance=0.5cm]
+  \node[draw=border, rounded corners=8pt, minimum width=1.5cm, minimum height=0.5cm, fill=bgdark] (m1) {\small Machine 1};
+  \node[draw=border, rounded corners=8pt, minimum width=1.5cm, minimum height=0.5cm, fill=bgdark, below=0.65cm of m1] (m2) {\small Machine 2};
+  \node[draw=success, rounded corners=8pt, minimum width=2.1cm, minimum height=0.55cm, fill=bgdark, right=1.4cm of m1] (db1) {\small SQLite};
+  \node[draw=success, rounded corners=8pt, minimum width=2.1cm, minimum height=0.55cm, fill=bgdark, right=1.4cm of m2] (db2) {\small SQLite};
+  \draw[-{Stealth[length=1.5mm]}, thick, draw=textsecondary] (m1) -- (db1);
+  \draw[-{Stealth[length=1.5mm]}, thick, draw=textsecondary] (m2) -- (db2);
+\end{tikzpicture}
+
+\vspace{0.2cm}
+
+\textcolor{textsecondary}{\small Chaque machine a sa propre copie (\texttt{scraped\_posts.db}).}
+\end{column}
+\begin{column}{0.48\textwidth}
+\centering
+\textbf{Base cloud (PostgreSQL / Supabase)}
+\vspace{0.2cm}
+\begin{tikzpicture}[scale=0.85, node distance=0.5cm]
+  \node[draw=border, rounded corners=8pt, minimum width=1.3cm, minimum height=0.45cm, fill=bgdark] (u1) {\small User 1};
+  \node[draw=border, rounded corners=8pt, minimum width=1.3cm, minimum height=0.45cm, fill=bgdark, below=0.4cm of u1] (u2) {\small User 2};
+  \node[draw=border, rounded corners=8pt, minimum width=1.3cm, minimum height=0.45cm, fill=bgdark, below=0.4cm of u2] (u3) {\small User 3};
+  \node[draw=accent, line width=1.2pt, rounded corners=10pt, minimum width=2.2cm, minimum height=1.2cm, fill=bgdark, right=1.4cm of u2] (cloud) {\small Base partagée};
+  \draw[-{Stealth[length=1.5mm]}, thick, draw=accent] (u1) -- (cloud);
+  \draw[-{Stealth[length=1.5mm]}, thick, draw=accent] (u2) -- (cloud);
+  \draw[-{Stealth[length=1.5mm]}, thick, draw=accent] (u3) -- (cloud);
+\end{tikzpicture}
+\vspace{0.15cm}
+\textcolor{textsecondary}{\small Si chacun scrappe, les posts vont dans la même base : tout le monde récupère directement les tweets des autres.}
+\end{column}
+\end{columns}
+\end{frame}
+
+% ---------- Slide 2 : Description des données ----------
+\begin{frame}{Donn\'ees et stockage -- Description des données}
+\vspace{0.2cm}
+\textbf{Table \texttt{posts} :} une ligne par post scrapé.
+\vspace{0.35cm}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.48\textwidth}
+\begin{itemize}
+\item \texttt{uid} (VARCHAR/TEXT) -- clé primaire, hash unique du post
+\item \texttt{id} (TEXT) -- identifiant côté plateforme
+\item \texttt{source} (TEXT) -- reddit, twitter, stocktwits, telegram, etc.
+\item \texttt{method} (TEXT) -- http, selenium, api
+\item \texttt{title} (TEXT) -- titre ou début du contenu
+\item \texttt{text} (TEXT) -- corps du message
+\item \texttt{score} (INTEGER) -- score / likes côté source
+\end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+\begin{itemize}
+\item \texttt{created\_utc} (TEXT) -- date de publication (ISO ou timestamp)
+\item \texttt{human\_label} (TEXT) -- label manuel optionnel (bullish/bearish/neutral)
+\item \texttt{author} (TEXT) -- auteur du post
+\item \texttt{subreddit} (TEXT) -- sous-reddit si Reddit
+\item \texttt{url} (TEXT) -- lien vers le post
+\item \texttt{num\_comments} (INTEGER) -- nombre de commentaires
+\item \texttt{scraped\_at} (TIMESTAMP/TEXT) -- date d'insertion en base
+\end{itemize}
+\end{column}
+\end{columns}
+\vspace{0.25cm}
+
+\end{frame}

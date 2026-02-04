@@ -1,0 +1,75 @@
+% ============================================================
+% PARTIE API -- Endpoints, GET, POST, etc.
+% ============================================================
+
+\section{III. API}
+
+% ---------- Slide 1 : Notions GET, POST, endpoint (texte) ----------
+\begin{frame}{API -- Notions : GET, POST, endpoint}
+\vspace{0.25cm}
+\textbf{GET} -- Lire des donn\'ees.
+\begin{itemize}
+  \item M\'ethode HTTP pour \textbf{r\'ecup\'erer} des informations (état du serveur, prix, liste\ldots).
+  \item Pas de corps (body) : les param\`etres passent dans l'URL ou en \textbf{query} (\texttt{?source=reddit\&limit=50}).
+  \item Exemples : \texttt{GET /health}, \texttt{GET /prices/bitcoin}, \texttt{GET /limits}.
+\end{itemize}
+\vspace{0.3cm}
+\textbf{POST} -- Envoyer des donn\'ees.
+\begin{itemize}
+  \item M\'ethode HTTP pour \textbf{envoyer} des donn\'ees au serveur (lancer un scrape, analyser du texte\ldots).
+  \item Les donn\'ees sont envoy\'ees dans le \textbf{body} de la requête, en général en \textbf{JSON} (ex.\ \texttt{\{"source": "reddit", "crypto": "bitcoin", "limit": 50\}}).
+  \item Exemples : \texttt{POST /scrape}, \texttt{POST /sentiment}, \texttt{POST /analyze}.
+\end{itemize}
+\vspace{0.3cm}
+\textbf{Endpoint} (ou \textbf{route}) = m\'ethode HTTP (GET ou POST) + \textbf{chemin} (\texttt{/health}, \texttt{/scrape}, \texttt{/prices/\{crypto\}}). C'est l'adresse de la ressource ou de l'action sur l'API.
+\end{frame}
+
+% ---------- Slide 2 : Notre API -- Vue d'ensemble des endpoints ----------
+\begin{frame}{API -- Notre API (Crypto Sentiment)}
+\vspace{0.15cm}
+\textbf{FastAPI} : documentation auto (\texttt{/docs}), validation Pydantic, async.
+
+\vspace{0.3cm}
+\small
+\begin{center}
+\begin{tabular}{@{}llp{5.5cm}@{}}
+\toprule
+\textbf{Méthode} & \textbf{Endpoint} & \textbf{Rôle} \\
+\midrule
+GET & \texttt{/} & Page d'accueil (HTML) \\
+GET & \texttt{/health} & Health check \\
+GET & \texttt{/limits} & Limites scraping par plateforme \\
+GET & \texttt{/prices/\{crypto\}} & Prix actuel (CoinGecko) \\
+\rowcolor{bglight}
+POST & \texttt{/scrape} & Scraper une source (body: source, crypto, limit) \\
+POST & \texttt{/sentiment} & Analyser des textes (body: texts, model) \\
+POST & \texttt{/analyze} & Pipeline scraping + sentiment \\
+POST & \texttt{/compare/models} & Comparer FinBERT vs CryptoBERT \\
+\rowcolor{bglight}
+GET & \texttt{/storage/stats} & Stats base \\
+GET & \texttt{/storage/export/csv} & Export CSV \\
+GET & \texttt{/storage/export/json} & Export JSON \\
+\bottomrule
+\end{tabular}
+\end{center}
+\vspace{0.2cm}
+\textcolor{textsecondary}{\scriptsize GET = lecture ; POST = action avec body JSON. Doc interactive : \texttt{/docs}.}
+\end{frame}
+
+% ---------- Slide 3 : Exemples concrets ----------
+\begin{frame}{API -- Exemples concrets}
+\vspace{0.15cm}
+\begin{block}{GET (pas de body)}
+\texttt{GET /health} $\to$ \texttt{\{"status": "ok", "timestamp": "\ldots"\}}\\
+\texttt{GET /prices/bitcoin} $\to$ \texttt{\{"id": "bitcoin", "symbol": "btc", "current\_price": \ldots\}}\\
+\texttt{GET /limits} $\to$ limites par source (reddit, twitter, youtube\ldots)
+\end{block}
+\vspace{0.2cm}
+\begin{block}{POST (body JSON)}
+\texttt{POST /scrape} avec \texttt{\{"source": "reddit", "crypto": "bitcoin", "limit": 50\}} $\to$ nb posts, sample, temps.\\
+\texttt{POST /sentiment} avec \texttt{\{"texts": ["BTC to the moon"], "model": "finbert"\}} $\to$ \texttt{label}, \texttt{score} par texte.\\
+\texttt{POST /analyze} : scraping + analyse sentiment en une requête.
+\end{block}
+\vspace{0.15cm}
+\textcolor{textsecondary}{\scriptsize En pratique : \texttt{curl}, Postman, ou le dashboard Streamlit qui appelle ces endpoints.}
+\end{frame}

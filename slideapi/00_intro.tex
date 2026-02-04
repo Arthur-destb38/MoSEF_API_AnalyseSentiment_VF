@@ -1,0 +1,32 @@
+% ============================================================
+% INTRODUCTION (apparait dans le Plan)
+% ============================================================
+
+\section{I. Introduction}
+
+\begin{frame}{Introduction}
+\vspace{0.25cm}
+\begin{center}
+\textcolor{accentlight}{\large Le sentiment des r\'eseaux sociaux peut-il \'eclairer les march\'es crypto ?}
+\end{center}
+\vspace{0.45cm}
+\centering
+\begin{tikzpicture}[
+  node distance=0.5cm,
+  box/.style={draw=#1, line width=1.1pt, rounded corners=8pt, minimum width=1.9cm, minimum height=0.75cm, fill=bglight, align=center, font=\scriptsize},
+  arrow/.style={-{Stealth[length=2mm]}, thick, accent}
+]
+  \node[box=accent] (reseaux) {\faIcon{comments}\\[-3pt]\textbf{R\'eseaux}\\[-4pt]sociaux};
+  \node[box=accent, right=0.5cm of reseaux] (sentiment) {\faIcon{brain}\\[-3pt]\textbf{Sentiment}\\[-4pt]NLP};
+  \node[box=success, right=0.5cm of sentiment] (marches) {\faIcon{chart-line}\\[-3pt]\textbf{March\'es}\\[-4pt]crypto};
+  \draw[arrow] (reseaux) -- (sentiment) (sentiment) -- (marches);
+\end{tikzpicture}
+\vspace{0.4cm}
+\begin{block}{Objectif du projet}
+\small Collecter des posts crypto (scraping / API), analyser le sentiment (FinBERT, CryptoBERT) et visualiser dans un dashboard Streamlit.
+\end{block}
+\vspace{0.15cm}
+\begin{exampleblock}{\faIcon{lightbulb} Perspective}
+\small Projet \`a d\'evelopper en \textbf{finance quantitative} : lien sentiment / prix, indicateurs, backtesting.
+\end{exampleblock}
+\end{frame}
