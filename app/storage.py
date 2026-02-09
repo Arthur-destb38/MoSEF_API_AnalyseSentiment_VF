@@ -8,7 +8,7 @@ import json
 import os
 import sqlite3
 from datetime import datetime, date
-from urllib.parse import urlparse, quote, unquote
+from urllib.parse import urlparse, quote, unquote, unquote_plus
 
 
 def _parse_created_utc_to_date(value) -> date | None:
@@ -90,7 +90,6 @@ def _get_postgres_conn():
     if "$$$$" in database_url:
         database_url = database_url.replace("$$$$", "$$")
     # Si le mot de passe contient $ et que c'est écrit tel quel dans l'URL, encoder en %24
-    # (ex. postgresql://user:pass$word@host/db -> ...pass%24word...)
     if "@" in database_url and "://" in database_url:
         scheme, rest = database_url.split("://", 1)
         if "@" in rest:
@@ -102,39 +101,86 @@ def _get_postgres_conn():
                     database_url = f"{scheme}://{user}:{password}@{host_part}"
 
     try:
-        # Si l'URL commence par postgres://, convertir en postgresql://
         if database_url.startswith("postgres://"):
             database_url = database_url.replace("postgres://", "postgresql://", 1)
 
         print("Tentative de connexion PostgreSQL via DATABASE_URL...")
 
-        # Essayer avec l'URL telle quelle d'abord
+        # Parser l'URL à la main pour gérer les mots de passe avec : ou @ (urlparse les casse)
+        # Format: postgresql://user:password@host:port/dbname
+        def _parse_db_url(url: str):
+            if "://" not in url or "@" not in url:
+                return None
+            scheme, rest = url.split("://", 1)
+            userinfo, host_part = rest.rsplit("@", 1)
+            if ":" not in userinfo:
+                return None
+            user, password = userinfo.split(":", 1)
+            password = unquote_plus(unquote(password))
+            # host_part = "host:5432/postgres" ou "host:5432"
+            if "/" in host_part:
+                host_port, db = host_part.split("/", 1)
+                db = (db.split("?")[0] or "postgres").strip()
+            else:
+                host_port, db = host_part, "postgres"
+            if ":" in host_port:
+                host, p = host_port.rsplit(":", 1)
+                port = int(p) if p.isdigit() else 5432
+            else:
+                host, port = host_port, 5432
+            return {"host": host, "port": port, "database": db or "postgres", "user": user, "password": password}
+
+        # 1) Essayer l'URL brute (marche si le mot de passe n'a pas de caractères spéciaux)
         try:
             conn = psycopg2.connect(database_url, sslmode="require")
             print("Connexion PostgreSQL reussie !")
             return conn
         except Exception:
-            # Si ça échoue, essayer de parser et utiliser paramètres séparés
-            parsed = urlparse(database_url)
-            conn = psycopg2.connect(
-                host=parsed.hostname,
-                port=parsed.port or 5432,
-                database=parsed.path.lstrip('/') or 'postgres',
-                user=parsed.username or 'postgres',
-                password=parsed.password or '',
-                sslmode="require"
-            )
-            print("Connexion PostgreSQL reussie (via parametres) !")
-            return conn
+            pass
+
+        # 2) Connexion avec parsing manuel (mot de passe avec @, :, #, etc.)
+        parsed = _parse_db_url(database_url)
+        if parsed:
+            try:
+                conn = psycopg2.connect(
+                    host=parsed["host"],
+                    port=parsed["port"],
+                    database=parsed["database"],
+                    user=parsed["user"],
+                    password=parsed["password"],
+                    sslmode="require"
+                )
+                print("Connexion PostgreSQL reussie !")
+                return conn
+            except Exception as e2:
+                raise e2
+
+        # 3) Fallback urlparse (pour URLs simples)
+        parsed = urlparse(database_url)
+        conn = psycopg2.connect(
+            host=parsed.hostname,
+            port=parsed.port or 5432,
+            database=parsed.path.lstrip('/').split('?')[0] or 'postgres',
+            user=parsed.username or 'postgres',
+            password=unquote_plus(unquote(parsed.password or '')),
+            sslmode="require"
+        )
+        print("Connexion PostgreSQL reussie !")
+        return conn
 
     except ImportError:
         print("psycopg2 non installe. Installe avec: pip install psycopg2-binary")
         return None
     except Exception as e:
+        err_str = str(e).lower()
         print(f"Erreur connexion PostgreSQL: {e}")
-        safe_url = database_url.split("@")[-1] if "@" in database_url else database_url[:50]
-        print(f"   Host: {safe_url}")
-        print(f"   Vérifie: 1) Le mot de passe est correct 2) Le projet Supabase est actif")
+        if "password authentication failed" in err_str or "authentication failed" in err_str:
+            print("   → Mot de passe refusé. Va sur Supabase : Project Settings → Database.")
+            print("   → Copie à nouveau l’URL de connexion (URI) ou réinitialise le mot de passe.")
+            print("   → Si le mot de passe contient # @ : / etc., encode-les dans l’URL (@ → %40, : → %3A, # → %23).")
+        else:
+            safe_url = database_url.split("@")[-1] if "@" in database_url else database_url[:50]
+            print(f"   Host: {safe_url}")
         return None
 
 
@@ -205,19 +251,51 @@ FORCE_SQLITE = False
 POSTGRES_TABLE = "posts2"
 
 
+def _get_supabase_rest_config() -> dict | None:
+    """Si SUPABASE_URL + SUPABASE_SERVICE_KEY (ou anon) sont définis, retourne la config pour l'API REST."""
+    url = (os.environ.get("SUPABASE_URL") or os.environ.get("SUPABASE_PROJECT_URL") or "").strip().rstrip("/")
+    key = (
+        os.environ.get("SUPABASE_SERVICE_KEY")
+        or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        or os.environ.get("SUPABASE_SECRET_KEY")
+        or os.environ.get("SUPABASE_ANON_KEY")
+        or ""
+    )
+    try:
+        import streamlit as st
+        if not url:
+            url = (st.secrets.get("SUPABASE_URL") or st.secrets.get("SUPABASE_PROJECT_URL") or "").strip().rstrip("/")
+        if not key:
+            key = (
+                st.secrets.get("SUPABASE_SERVICE_KEY")
+                or st.secrets.get("SUPABASE_SERVICE_ROLE_KEY")
+                or st.secrets.get("SUPABASE_SECRET_KEY")
+                or st.secrets.get("SUPABASE_ANON_KEY")
+                or ""
+            )
+    except Exception:
+        pass
+    if url and key:
+        return {"url": url, "key": key, "table": POSTGRES_TABLE}
+    return None
+
+
 def _get_connection():
-    """Retourne une connexion PostgreSQL (cloud) ou SQLite (local)."""
-    # Si FORCE_SQLITE est activé, utiliser SQLite directement
+    """Retourne une connexion PostgreSQL (cloud), Supabase REST, ou SQLite (local)."""
     if FORCE_SQLITE:
         return _ensure_sqlite_storage(), "sqlite"
-    
-    # Sinon, essayer PostgreSQL d'abord
+
     if POSTGRES_AVAILABLE:
         conn = _ensure_postgres_storage()
         if conn:
             return conn, "postgres"
-    
-    # Fallback SQLite
+
+    # Fallback : API REST Supabase (Project URL + clé API, pas besoin du mot de passe PostgreSQL)
+    rest = _get_supabase_rest_config()
+    if rest:
+        print("Connexion via API REST Supabase (Project URL + clé API).")
+        return rest, "supabase_rest"
+
     return _ensure_sqlite_storage(), "sqlite"
 
 
@@ -239,9 +317,59 @@ def _append_jsonl(post: dict) -> None:
         pass  # Ignore si pas de permissions
 
 
+def _save_posts_supabase_rest(posts: list, source: str | None, method: str | None, rest: dict) -> dict:
+    """Sauvegarde via l'API REST Supabase (Project URL + clé). Doublons ignorés (upsert)."""
+    import requests
+    base = rest["url"]
+    key = rest["key"]
+    table = rest["table"]
+    endpoint = f"{base}/rest/v1/{table}"
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "Prefer": "resolution=ignore-duplicates",
+    }
+    scraped_at = datetime.utcnow()
+    inserted = 0
+    for post in posts:
+        p_source = source or post.get("source") or "unknown"
+        p_method = method or post.get("method") or "unknown"
+        uid = _post_uid(post, p_source, p_method)
+        row = {
+            "uid": uid,
+            "id": str(post.get("id") or ""),
+            "source": p_source,
+            "method": p_method,
+            "title": post.get("title", "") or "",
+            "text": post.get("text", "") or "",
+            "score": int(post.get("score") or 0),
+            "created_utc": str(post.get("created_utc") or ""),
+            "human_label": post.get("human_label"),
+            "author": post.get("author"),
+            "subreddit": post.get("subreddit"),
+            "url": post.get("url"),
+            "num_comments": int(post.get("num_comments")) if post.get("num_comments") is not None else None,
+            "scraped_at": scraped_at.isoformat(),
+        }
+        try:
+            r = requests.post(endpoint, json=row, headers=headers, timeout=15)
+            if r.status_code in (200, 201, 204):
+                inserted += 1
+            elif r.status_code == 409:
+                pass  # doublon ignoré
+            elif r.status_code == 404:
+                print("   Table posts2 introuvable. Crée-la dans Supabase (Table Editor ou SQL).")
+                break
+        except Exception as e:
+            print(f"   Erreur API Supabase: {e}")
+            break
+    return {"inserted": inserted, "total": len(posts), "db_type": "supabase_rest"}
+
+
 def save_posts(posts: list, source: str | None = None, method: str | None = None) -> dict:
     """
-    Persist scraped posts to PostgreSQL (cloud) ou SQLite (local).
+    Persist scraped posts to PostgreSQL (cloud), Supabase REST API, ou SQLite (local).
     Returns basic stats.
     """
     if not posts:
@@ -251,6 +379,9 @@ def save_posts(posts: list, source: str | None = None, method: str | None = None
     conn, db_type = _get_connection()
     if not conn:
         return {"inserted": 0, "total": 0, "db_type": "none", "error": "No database connection"}
+
+    if db_type == "supabase_rest":
+        return _save_posts_supabase_rest(posts, source, method, conn)
 
     cur = conn.cursor()
     inserted = 0
@@ -319,6 +450,48 @@ def save_posts(posts: list, source: str | None = None, method: str | None = None
     return {"inserted": inserted, "total": len(posts), "db_type": db_type}
 
 
+def _get_all_posts_supabase_rest(
+    rest: dict,
+    source: str | list[str] | None,
+    method: str | None,
+    limit: int | None,
+    date_from: date | None,
+    date_to: date | None,
+) -> list[dict]:
+    """Récupère les posts via l'API REST Supabase."""
+    import requests
+    endpoint = f"{rest['url']}/rest/v1/{rest['table']}"
+    headers = {"apikey": rest["key"], "Authorization": f"Bearer {rest['key']}"}
+    params = {"order": "scraped_at.desc", "limit": str(min((limit or 5000) * 2, 15000))}
+    if source:
+        if isinstance(source, list):
+            params["source"] = "in.(" + ",".join(source) + ")"
+        else:
+            params["source"] = f"eq.{source}"
+    if method:
+        params["method"] = f"eq.{method}"
+    try:
+        r = requests.get(endpoint, headers=headers, params=params, timeout=30)
+        if r.status_code != 200:
+            return []
+        posts = r.json()
+    except Exception:
+        return []
+    if date_from is not None or date_to is not None:
+        filtered = []
+        for p in posts:
+            d = _parse_created_utc_to_date(p.get("created_utc"))
+            if d is None:
+                continue
+            if date_from is not None and d < date_from:
+                continue
+            if date_to is not None and d > date_to:
+                continue
+            filtered.append(p)
+        posts = filtered[:limit] if limit else filtered
+    return posts[:limit] if limit else posts
+
+
 def get_all_posts(
     source: str | list[str] | None = None,
     method: str | None = None,
@@ -347,7 +520,10 @@ def get_all_posts(
     if date_to is not None:
         d_to = date_to if isinstance(date_to, date) else datetime.strptime(str(date_to)[:10], "%Y-%m-%d").date()
 
-    # Quand on filtre par date, on récupère plus de lignes puis on filtre en Python (formats created_utc mixtes)
+    if db_type == "supabase_rest":
+        return _get_all_posts_supabase_rest(conn, sources, method, limit, d_from, d_to)
+
+    # Quand on filtre par date, on récupère plus de lignes puis on filtre en Python
     fetch_limit = limit
     if (d_from is not None or d_to is not None) and (limit is None or limit > 0):
         fetch_limit = (limit or 5000) * 3
@@ -455,9 +631,33 @@ def get_stats() -> dict:
     conn, db_type = _get_connection()
     if not conn:
         return {"total_posts": 0, "db_type": "none"}
-    
+
+    if db_type == "supabase_rest":
+        import requests
+        endpoint = f"{conn['url']}/rest/v1/{conn['table']}"
+        headers = {"apikey": conn["key"], "Authorization": f"Bearer {conn['key']}"}
+        try:
+            r = requests.get(endpoint, headers=headers, params={"limit": "10000"}, timeout=30)
+            if r.status_code != 200:
+                return {"total_posts": 0, "by_source_method": [], "first_scrape": None, "last_scrape": None, "db_type": "supabase_rest"}
+            posts = r.json()
+        except Exception:
+            return {"total_posts": 0, "by_source_method": [], "first_scrape": None, "last_scrape": None, "db_type": "supabase_rest"}
+        by_sm = {}
+        for p in posts:
+            s, m = p.get("source") or "?", p.get("method") or "?"
+            by_sm[(s, m)] = by_sm.get((s, m), 0) + 1
+        scraped = [p.get("scraped_at") for p in posts if p.get("scraped_at")]
+        return {
+            "total_posts": len(posts),
+            "by_source_method": [{"source": s, "method": m, "count": c} for (s, m), c in by_sm.items()],
+            "first_scrape": min(scraped) if scraped else None,
+            "last_scrape": max(scraped) if scraped else None,
+            "db_type": "supabase_rest",
+        }
+
     cur = conn.cursor()
-    
+
     if db_type == "postgres":
         cur.execute(f"SELECT COUNT(*) FROM {POSTGRES_TABLE}")
         total = cur.fetchone()[0]

@@ -2,9 +2,17 @@
 """
 Scrape toutes les plateformes supportées en une seule exécution.
 Les posts sont enregistrés en base (PostgreSQL ou SQLite selon config).
-À lancer depuis la racine du projet : python scripts/scrape_all.py
+
+Usage:
+  python scripts/scrape_all.py           # Toutes les plateformes (inclut Selenium)
+  python scripts/scrape_all.py --http-only   # Uniquement HTTP/API (fiable, pas de Chrome)
+
+--http-only : ignore StockTwits, Twitter et YouTube Selenium. Recommandé si le script
+  bloque ou si Chrome n'est pas installé. Reddit, 4chan, Bitcointalk, GitHub,
+  Telegram, Bluesky (+ YouTube API si YOUTUBE_API_KEY) restent actifs.
 """
 
+import argparse
 import os
 import sys
 from datetime import datetime
@@ -65,7 +73,15 @@ def run_one(name: str, fetch_fn, *args, save_source: str = None, save_method: st
 
 
 def main() -> None:
-    _log("=== Scrape toutes les plateformes ===")
+    parser = argparse.ArgumentParser(description="Scrape toutes les plateformes → base (PostgreSQL ou SQLite)")
+    parser.add_argument("--http-only", action="store_true", help="Uniquement HTTP/API (pas de Selenium: pas StockTwits, Twitter, YouTube)")
+    args = parser.parse_args()
+    http_only = args.http_only
+
+    if http_only:
+        _log("=== Scrape (mode HTTP/API uniquement — pas de Selenium) ===")
+    else:
+        _log("=== Scrape toutes les plateformes ===")
     total_inserted = 0
 
     # --- Reddit (plusieurs subreddits, méthode HTTP = rapide) ---
@@ -75,24 +91,30 @@ def main() -> None:
         n = run_one(f"Reddit r/{sub}", scrape_reddit, sub, limit=limit_reddit, method="http", save_source="reddit", save_method="http")
         total_inserted += n
 
-    # --- StockTwits (symboles principaux) ---
-    st_limits = get_stocktwits_limits()
-    limit_st = st_limits.get("selenium", 500)
-    for symbol in ["BTC.X", "ETH.X"]:
-        n = run_one(f"StockTwits {symbol}", scrape_stocktwits, symbol, limit=limit_st, method="selenium", save_source="stocktwits", save_method="selenium")
+    # --- StockTwits (Selenium) — ignoré en --http-only ---
+    if not http_only:
+        st_limits = get_stocktwits_limits()
+        limit_st = st_limits.get("selenium", 500)
+        for symbol in ["BTC.X", "ETH.X"]:
+            n = run_one(f"StockTwits {symbol}", scrape_stocktwits, symbol, limit=limit_st, method="selenium", save_source="stocktwits", save_method="selenium")
+            total_inserted += n
+
+    # --- Twitter/X (Selenium) — ignoré en --http-only ---
+    if not http_only:
+        tw_limits = get_twitter_limits()
+        limit_tw = tw_limits.get("selenium", 500)
+        n = run_one("Twitter crypto", scrape_twitter, "bitcoin crypto", limit=limit_tw, method="selenium", save_source="twitter", save_method="selenium")
         total_inserted += n
 
-    # --- Twitter/X ---
-    tw_limits = get_twitter_limits()
-    limit_tw = tw_limits.get("selenium", 500)
-    n = run_one("Twitter crypto", scrape_twitter, "bitcoin crypto", limit=limit_tw, method="selenium", save_source="twitter", save_method="selenium")
-    total_inserted += n
-
-    # --- YouTube ---
+    # --- YouTube (API si clé, sinon Selenium) — en http-only on force API uniquement ---
     yt_limits = get_youtube_limits()
-    limit_yt = max(yt_limits.get("api", 200), yt_limits.get("selenium", 100))
-    n = run_one("YouTube bitcoin crypto", scrape_youtube, "bitcoin crypto", limit=limit_yt, save_source="youtube", save_method="api")
-    total_inserted += n
+    limit_yt = yt_limits.get("api", 500) if http_only else max(yt_limits.get("api", 200), yt_limits.get("selenium", 100))
+    if http_only and os.environ.get("YOUTUBE_API_KEY"):
+        n = run_one("YouTube bitcoin crypto", scrape_youtube, "bitcoin crypto", limit=limit_yt, method="api", save_source="youtube", save_method="api")
+        total_inserted += n
+    elif not http_only:
+        n = run_one("YouTube bitcoin crypto", scrape_youtube, "bitcoin crypto", limit=limit_yt, save_source="youtube", save_method="api")
+        total_inserted += n
 
     # --- Telegram (tous les channels configurés, paginé) ---
     tg_limits = get_telegram_limits()

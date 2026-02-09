@@ -22,10 +22,11 @@ if [ -f ".env" ]; then
     set +a
 fi
 
-echo "Lancement du scrape complet depuis $PROJECT_DIR"
+echo "Lancement du scrape depuis $PROJECT_DIR"
+echo "  (pour un run sans Selenium, lancez : ./scrape_all.sh --http-only)"
 echo ""
 
-python scripts/scrape_all.py
+python scripts/scrape_all.py "$@"
 
 echo ""
 echo "Terminé."

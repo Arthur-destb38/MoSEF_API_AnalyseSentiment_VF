@@ -85,7 +85,9 @@ cd projet-api-VF
 ./run.sh
 ```
 
-Le script `run.sh` :
+Le script `run.sh` fonctionne sur **macOS** et **Linux** (Bash). Sous Windows, utiliser WSL, Git Bash, ou l’installation manuelle (venv + `streamlit run streamlit_app.py`).
+
+Il :
 1. Vérifie que Python 3.10+ est installé
 2. Crée le fichier `.env` avec les variables par défaut
 3. Crée un environnement virtuel `.venv`
@@ -158,6 +160,23 @@ poetry run uvicorn app.main:app --reload
 - API : [http://127.0.0.1:8000](http://127.0.0.1:8000)
 - Swagger : [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 - ReDoc : [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc)
+
+### Scraping en lot (scripts)
+
+- **Scrape complet** (toutes les plateformes, peut être long et nécessite Chrome pour StockTwits/Twitter/YouTube) :
+  ```bash
+  ./scrape_all.sh
+  ```
+- **Scrape fiable sans Selenium** (recommandé si le script bloque ou sans Chrome) : Reddit, 4chan, Bitcointalk, GitHub, Telegram, Bluesky (+ YouTube si `YOUTUBE_API_KEY` est défini) :
+  ```bash
+  ./scrape_all.sh --http-only
+  ```
+- **Test rapide** (10 posts × 5 plateformes HTTP/API) :
+  ```bash
+  ./test_scrape_5.sh
+  ```
+
+Les posts sont enregistrés en base (PostgreSQL si `DATABASE_URL` est joignable, sinon SQLite). Voir [ENV.md](ENV.md) pour les variables d'environnement.
 
 ---
 

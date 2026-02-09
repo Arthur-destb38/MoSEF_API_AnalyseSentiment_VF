@@ -26,7 +26,22 @@ Le fichier `.env` ne doit **pas** être versionné (il est dans `.gitignore`). C
 | `DB_USER` / `POSTGRES_USER` | Utilisateur (défaut `postgres`). |
 | `DB_PASSWORD` / `POSTGRES_PASSWORD` | Mot de passe. |
 
-**Note :** Si le mot de passe dans `DATABASE_URL` contient `$`, l’écrire en `%24` dans l’URL (ex. `pass%24word`).
+**Alternative sans mot de passe PostgreSQL (API REST Supabase) :** si la connexion avec `DATABASE_URL` échoue (ex. « password authentication failed »), tu peux utiliser l’**endpoint API** du projet au lieu du mot de passe :
+
+| Variable | Description |
+|---------|-------------|
+| `SUPABASE_URL` | URL du projet (ex. `https://kocmirnpyfcjuhuadalj.supabase.co`). Dans Supabase : **Settings** → **API** → **Project URL**. |
+| `SUPABASE_SERVICE_KEY` ou `SUPABASE_SECRET_KEY` ou `SUPABASE_ANON_KEY` | Clé API (Secret key = privilégiée). **Settings** → **API** → **Secret keys** → copier la clé. Nom exact dans `.env` : `SUPABASE_SERVICE_KEY=...` ou `SUPABASE_SECRET_KEY=...`. |
+
+Si ces deux variables sont définies, l’app utilisera l’API REST pour enregistrer et lire les posts (plus besoin de `DATABASE_URL`). La table `posts2` doit exister dans ton projet (créée une fois via l’onglet **Table Editor** ou **SQL** si besoin).
+
+**Note :** Si le mot de passe contient des caractères spéciaux, les encoder dans l’URL : `@` → `%40`, `:` → `%3A`, `#` → `%23`, `$` → `%24`, `/` → `%2F`.
+
+**Si tu as « password authentication failed » :**
+1. Va sur [Supabase](https://app.supabase.com) → ton projet → **Project Settings** → **Database**.
+2. Dans **Connection string**, copie l’URL **URI** (ou **Session mode** avec port 5432).
+3. Remplace le mot de passe dans l’URL par celui affiché (ou clique sur **Reset database password** et utilise le nouveau).
+4. Colle l’URL dans ton `.env` : `DATABASE_URL=postgresql://postgres.xxx:TON_MOT_DE_PASSE@db.xxx.supabase.co:5432/postgres` (sans espace, sans guillemets inutiles). Si le mot de passe a des caractères spéciaux, encode-les comme ci‑dessus.
 
 ---
 

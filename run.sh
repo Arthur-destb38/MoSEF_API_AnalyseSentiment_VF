@@ -2,6 +2,10 @@
 # =============================================================================
 # Crypto Sentiment Dashboard - Script d'installation et de lancement
 # =============================================================================
+# Compatible : macOS, Linux (tout système avec Bash et python3).
+# Windows : utiliser WSL, Git Bash, ou "python -m venv .venv" puis
+#           ".venv\Scripts\activate" et "streamlit run streamlit_app.py".
+# =============================================================================
 
 set -e
 
