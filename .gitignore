@@ -13,15 +13,24 @@ env/
 
 # OS
 .DS_Store
+Thumbs.db
+
+# Fichiers temporaires
+*.log
+*.tmp
+*.temp
+*.swp
+*~
 
 # Tests / cache
 .pytest_cache/
 .coverage
 htmlcov/
 
-# Env vars
+# Env vars (ne pas commiter les secrets)
 .env
 .env.*
+!.env.example
 
 # Streamlit secrets (ne pas commiter)
 .streamlit/secrets.toml

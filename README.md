@@ -1,262 +1,134 @@
 # Crypto Sentiment Analysis
 
-*Analyse de sentiment des cryptomonnaies à partir des réseaux sociaux*
-
-Projet de Master MoSEF 2025-2026 — Université Paris 1 Panthéon-Sorbonne
+*Projet Master MoSEF 2025-2026 — Université Paris 1 Panthéon-Sorbonne*
 
 ---
 
-## Sommaire
+## Contexte
 
-- [À propos](#à-propos)
-- [Fonctionnalités](#fonctionnalités)
-- [Sources de données](#sources-de-données)
-- [Installation](#installation)
-- [Lancement](#lancement)
-- [Variables d'environnement](#variables-denvironnement)
-- [Architecture](#architecture)
-- [Déploiement](#déploiement)
-- [Références et auteurs](#références-et-auteurs)
+La littérature en finance suggère que le sentiment exprimé sur les réseaux sociaux peut contenir une information prédictive sur les mouvements de marché. Dans le cadre des actifs numériques (cryptomonnaies), les discussions en ligne (Reddit, Twitter, forums, etc.) sont particulièrement actives et constituent une source de données potentiellement exploitable pour l’analyse de sentiment et la relation avec l’évolution des prix.
+
+Ce projet s’inscrit dans le Master MoSEF (Modélisation Statistique Économique et Financière) de l’Université Paris 1 Panthéon-Sorbonne. Il s’appuie notamment sur des travaux tels que Kraaijeveld & De Smedt (2020) sur le pouvoir prédictif du sentiment Twitter pour les prix des cryptomonnaies, et sur des modèles de langue pré-entraînés dédiés (FinBERT, CryptoBERT).
 
 ---
 
-## À propos
+## Objectif
 
-Ce projet vise à étudier la relation entre le sentiment exprimé sur les réseaux sociaux et l’évolution des prix des cryptomonnaies. La littérature suggère que les discussions en ligne peuvent contenir une information prédictive sur les mouvements de marché ; l’objectif est d’en tester la pertinence dans le cadre des actifs numériques.
+L’objectif est d’**étudier la relation entre le sentiment exprimé sur les réseaux sociaux et l’évolution des prix des cryptomonnaies**, et d’en tester la pertinence dans un cadre reproductible :
 
-Le pipeline repose sur les étapes suivantes :
-
-1. **Collecte** — Récupération des données sur plusieurs plateformes (Reddit, StockTwits, Twitter, Telegram, 4chan/biz, Bitcointalk, GitHub, Bluesky, YouTube).
-2. **Analyse** — Mesure du sentiment à l’aide de deux modèles pré-entraînés : FinBERT (finance générale) et CryptoBERT (spécialisé sur le lexique crypto).
-3. **Validation** — Comparaison des sorties des modèles aux labels humains disponibles sur StockTwits (Bullish / Bearish).
-4. **Économétrie** — Mise en œuvre de tests de stationnarité (ADF), de causalité au sens de Granger et de modèles VAR pour caractériser les liens entre sentiment et prix.
+- **Collecter** des données de discussion (posts, tweets, messages) sur plusieurs plateformes, pour plusieurs actifs (Bitcoin, Ethereum, Solana, etc.).
+- **Mesurer le sentiment** à l’aide de modèles NLP pré-entraînés (FinBERT pour la finance générale, CryptoBERT pour le lexique crypto).
+- **Valider** les sorties des modèles en les comparant aux labels humains lorsqu’ils existent (ex. Bullish/Bearish sur StockTwits).
+- **Caractériser les liens** entre sentiment et prix via des outils économétriques (stationnarité, causalité de Granger, modèles VAR).
 
 ---
 
-## Fonctionnalités
+## Méthodologie
 
-### Interface Streamlit
+### Pipeline
 
-L’application Streamlit propose les vues suivantes :
+1. **Collecte** — Récupération des données via API (Reddit, GitHub, Bluesky, YouTube avec clé API, Telegram) ou scraping HTTP/Selenium (StockTwits, Twitter/X, 4chan/biz, Bitcointalk, Instagram, Discord, TikTok). Les posts sont stockés en base (PostgreSQL ou SQLite) avec métadonnées (plateforme, actif, date, texte).
+2. **Prétraitement** — Nettoyage du texte (URLs, mentions, emojis) puis passage dans les modèles de sentiment.
+3. **Analyse NLP** — Deux modèles : **FinBERT** (finance générale) et **CryptoBERT** (spécialisé crypto). Comparaison des scores et, si possible, validation sur les labels StockTwits.
+4. **Économétrie** — Tests de stationnarité (ADF), causalité au sens de Granger, modèles VAR pour étudier les relations sentiment–prix (implémentés dans `econometrics.py`).
 
-| Page | Description |
-|------|-------------|
-| Accueil | Présentation du projet et accès aux différentes sections. |
-| Scraping | Lancement des collectes par plateforme, avec sélection de la cryptomonnaie et des limites (nombre de posts, etc.). |
-| Données | Consultation des posts stockés (PostgreSQL ou JSONL), statistiques descriptives et export CSV/JSON. |
-| Analyses des résultats | Visualisations (Plotly), comparaison FinBERT / CryptoBERT, analyse par actif et résultats des tests économétriques (ADF, Granger, VAR). |
-| Documentation | Méthodologie, description des sources et des modèles, références. |
+### Sources de données
 
-### API FastAPI
+| Plateforme   | Méthode              | Données                          |
+|-------------|----------------------|-----------------------------------|
+| Reddit      | API JSON             | Subreddits par cryptomonnaie      |
+| StockTwits  | Selenium             | Messages + labels Bullish/Bearish |
+| Twitter / X | Selenium (ou sans login) | Tweets par mot-clé/symbole   |
+| Telegram    | API / scraping       | Canaux crypto                     |
+| 4chan       | HTTP                 | Board /biz/                       |
+| Bitcointalk | HTTP                 | Forums crypto                     |
+| GitHub      | API                  | Issues/discussions dépôts crypto  |
+| Bluesky     | API atproto          | Publications crypto               |
+| YouTube     | API Google           | Commentaires vidéos crypto        |
 
-Une API REST est fournie pour l’intégration du pipeline dans d’autres systèmes. Elle expose des endpoints pour le scraping, l’analyse de sentiment et la récupération des prix. La documentation interactive est disponible au format Swagger (`/docs`) et ReDoc (`/redoc`).
+Actifs supportés (liste non exhaustive) : Bitcoin, Ethereum, Solana, Cardano, Dogecoin, XRP, Polkadot, Chainlink, Litecoin, Avalanche.
 
----
+### Outils
 
-## Sources de données
-
-Les données sont collectées sur les plateformes suivantes :
-
-| Plateforme | Méthode | Type de données |
-|------------|--------|-----------------|
-| Reddit | API JSON (old.reddit.com) | Subreddits par cryptomonnaie (r/Bitcoin, r/ethereum, etc.) |
-| StockTwits | Scraping (Selenium) | Messages et labels Bullish/Bearish |
-| Twitter / X | Scraping (Selenium, mode sans authentification possible) | Tweets par mot-clé ou symbole |
-| Telegram | API / scraping | Canaux crypto configurés |
-| 4chan | Requêtes HTTP | Board /biz/ |
-| Bitcointalk | Requêtes HTTP | Forums dédiés aux cryptomonnaies |
-| GitHub | API | Discussions sur des dépôts crypto |
-| Bluesky | API atproto | Publications crypto |
-| YouTube | API Google | Commentaires sous vidéos crypto |
-
-Les actifs supportés incluent notamment Bitcoin, Ethereum, Solana, Cardano, Dogecoin, XRP, Polkadot, Chainlink, Litecoin et Avalanche. Les subreddits et symboles StockTwits sont configurables.
+- **Interface** : application **Streamlit** (dashboard : scraping, données, visualisations, comparaison FinBERT/CryptoBERT, résultats économétriques).
+- **API** : **FastAPI** pour intégration externe (endpoints scraping, NLP, prix ; doc Swagger `/docs`, ReDoc `/redoc`).
+- **Stack** : Python 3.10+, Poetry, PyTorch/Transformers pour les modèles, CoinGecko pour les prix.
 
 ---
 
-## Installation
-
-### Démarrage rapide (recommandé)
-
-```bash
-git clone https://github.com/Arthur-destb38/projet-api-VF.git
-cd projet-api-VF
-
-# Lancer le script d'installation et de démarrage
-./run.sh
-```
-
-Le script `run.sh` fonctionne sur **macOS** et **Linux** (Bash). Sous Windows, utiliser WSL, Git Bash, ou l’installation manuelle (venv + `streamlit run streamlit_app.py`).
-
-Il :
-1. Vérifie que Python 3.10+ est installé
-2. Crée le fichier `.env` avec les variables par défaut
-3. Crée un environnement virtuel `.venv`
-4. Installe toutes les dépendances
-5. Lance l'application Streamlit
-
-### Prérequis
-
-- Python 3.10 à 3.14
-- Poetry (recommandé) ou environnement virtuel `venv` avec `pip`
-
-### Installation avec Poetry
-
-```bash
-git clone https://github.com/Arthur-destb38/Projet_API.git
-cd Projet_API
-
-# Installer Poetry si nécessaire : https://python-poetry.org/docs/#installation
-# Exemple : pip install --user poetry
-
-poetry install
-# Si la commande poetry n'est pas dans le PATH :
-python3 -m poetry install
-```
-
-La première installation peut prendre plusieurs minutes (téléchargement de PyTorch et Transformers, environ 2 Go).
-
-### Installation sans Poetry
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate   # Sous Windows : .venv\Scripts\activate
-pip install -e .
-```
-
-Pour reproduire l’environnement à partir du lock Poetry :  
-`poetry export -f requirements.txt --without-hashes | pip install -r /dev/stdin`
-
-### Ajout d’une dépendance (Poetry)
-
-```bash
-poetry add <package>
-# ou : python3 -m poetry add <package>
-poetry lock
-```
-
----
-
-## Lancement
-
-Les commandes doivent être exécutées dans l’environnement du projet (Poetry ou venv). Avec Poetry, préfixer par `poetry run` ou `python3 -m poetry run` si `poetry` n’est pas dans le PATH.
-
-### Interface Streamlit
-
-```bash
-poetry run streamlit run streamlit_app.py
-# ou :
-python3 -m poetry run streamlit run streamlit_app.py
-```
-
-L’interface est accessible à l’adresse [http://localhost:8501](http://localhost:8501). Si le port 8501 est déjà utilisé, préciser un autre port :  
-`streamlit run streamlit_app.py --server.port 8765`
-
-### API FastAPI
-
-```bash
-poetry run uvicorn app.main:app --reload
-```
-
-- API : [http://127.0.0.1:8000](http://127.0.0.1:8000)
-- Swagger : [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
-- ReDoc : [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc)
-
-### Scraping en lot (scripts)
-
-- **Scrape complet** (toutes les plateformes, peut être long et nécessite Chrome pour StockTwits/Twitter/YouTube) :
-  ```bash
-  ./scrape_all.sh
-  ```
-- **Scrape fiable sans Selenium** (recommandé si le script bloque ou sans Chrome) : Reddit, 4chan, Bitcointalk, GitHub, Telegram, Bluesky (+ YouTube si `YOUTUBE_API_KEY` est défini) :
-  ```bash
-  ./scrape_all.sh --http-only
-  ```
-- **Test rapide** (10 posts × 5 plateformes HTTP/API) :
-  ```bash
-  ./test_scrape_5.sh
-  ```
-
-Les posts sont enregistrés en base (PostgreSQL si `DATABASE_URL` est joignable, sinon SQLite). Voir [ENV.md](ENV.md) pour les variables d'environnement.
-
----
-
-## Variables d'environnement
-
-Un fichier `.env` à la racine du projet permet de configurer les clés et identifiants suivants :
-
-| Variable | Description |
-|----------|-------------|
-| `APP_PASSWORD` ou `DASHBOARD_PASSWORD` | Mot de passe d’accès au dashboard Streamlit (optionnel en local). |
-| `DATABASE_URL` | URL de connexion PostgreSQL (ex. Supabase) pour le stockage des posts. |
-| `YOUTUBE_API_KEY` | Clé API Google pour le scraper YouTube. |
-| `BLUESKY_USERNAME` / `BLUESKY_APP_PASSWORD` | Identifiants Bluesky (App Password) pour le scraper Bluesky. |
-| `TWITTER_*` | Identifiants Twitter ; `TWITTER_NO_LOGIN=1` permet un mode sans authentification. |
-| `INSTAGRAM_*` | Identifiants Instagram pour le scraper Instagram. |
-| `DISCORD_BOT_TOKEN` | Token du bot Discord si le scraper Discord est utilisé. |
-
-Le fichier `.env` ne doit pas être versionné (il est listé dans `.gitignore`).
-
----
-
-## Architecture
+## Structure du projet
 
 ```
-Projet_API/
+projet-api-VF/
 ├── app/
 │   ├── main.py              # API FastAPI (scraping, NLP, prix)
-│   ├── nlp.py               # Chargement et inférence FinBERT / CryptoBERT
-│   ├── prices.py            # Récupération des prix (CoinGecko, séries historiques)
-│   ├── storage.py           # Persistance (PostgreSQL, JSONL, export CSV/JSON)
-│   ├── utils.py             # Prétraitement du texte (URLs, mentions, emojis)
-│   └── scrapers/
-│       ├── http_scraper.py
-│       ├── reddit_scraper.py
-│       ├── stocktwits_scraper.py
-│       ├── twitter_scraper.py
-│       ├── telegram_scraper.py
-│       ├── chan4_scraper.py
-│       ├── bitcointalk_scraper.py
-│       ├── github_scraper.py
-│       ├── bluesky_scraper.py
-│       ├── youtube_scraper.py
-│       ├── instagram_scraper.py
-│       ├── discord_scraper.py
-│       ├── tiktok_scraper.py
-│       └── selenium_scraper.py
+│   ├── nlp.py               # FinBERT / CryptoBERT
+│   ├── prices.py            # Prix (CoinGecko)
+│   ├── storage.py           # Persistance PostgreSQL / SQLite / JSONL
+│   ├── utils.py             # Prétraitement texte
+│   └── scrapers/            # Reddit, Twitter, Telegram, 4chan, etc.
 ├── streamlit_app.py         # Application Streamlit
 ├── econometrics.py          # Tests ADF, Granger, VAR
-├── templates/               # Templates HTML (FastAPI)
+├── templates/               # Page d'accueil API (HTML)
 ├── data/exports/            # Exports CSV/JSON
-├── pyproject.toml
-├── poetry.lock
-├── Dockerfile
-├── render.yaml
+├── scripts/                 # Scraping en lot (scrape_all.py, test_scrape_5.py, …)
+├── tests/                   # Tests unitaires
+├── slideapi/                # Supports de présentation (LaTeX)
+├── ENV.md                   # Variables d'environnement
+├── pyproject.toml / poetry.lock
+├── Dockerfile / render.yaml
 └── .streamlit/config.toml
 ```
 
 ---
 
-## Déploiement
+## Résultats / état actuel
 
-- **Render** : le fichier `render.yaml` définit un service web (build via Poetry, démarrage de Streamlit). Les variables d’environnement (dont `APP_PASSWORD`) sont à renseigner dans le tableau de bord Render.
-- **Docker** : le `Dockerfile` permet de construire une image et d’exécuter l’application en conteneur.
+- **Dashboard Streamlit** opérationnel : accueil, scraping par plateforme, consultation des données (PostgreSQL ou SQLite), visualisations (Plotly), comparaison FinBERT/CryptoBERT, résultats des tests économétriques (ADF, Granger, VAR), documentation intégrée.
+- **API FastAPI** opérationnelle : endpoints pour le scraping, l’analyse de sentiment et la récupération des prix ; documentation interactive (Swagger, ReDoc).
+- **Scrapers** implémentés pour les plateformes listées ci-dessus ; stockage unifié en base ; export CSV/JSON possible.
+- **Déploiement** : configuration Render (`render.yaml`) et image Docker (`Dockerfile`) disponibles.
+
+### Installation et lancement
+
+**Démarrage rapide (macOS / Linux)** :
+
+```bash
+git clone https://github.com/Arthur-destb38/projet-api-VF.git
+cd projet-api-VF
+./run.sh
+```
+
+Le script vérifie Python 3.10+, crée un `.env` si besoin, crée le venv, installe les dépendances (Poetry ou pip) et lance Streamlit sur [http://localhost:8501](http://localhost:8501).
+
+**Avec Poetry** :
+
+```bash
+poetry install
+poetry run streamlit run streamlit_app.py
+poetry run uvicorn app.main:app --reload   # API : http://127.0.0.1:8000
+```
+
+**Variables d’environnement** : copier `.env.example` en `.env` et renseigner les variables optionnelles (base de données, clés API YouTube/Bluesky/Twitter, etc.). Détail dans [ENV.md](ENV.md). Aucune variable n’est obligatoire pour faire tourner l’app en local (SQLite par défaut).
+
+**Scraping en lot** :
+
+- `./scrape_all.sh` — toutes les plateformes (certaines nécessitent Chrome/Selenium).
+- `./scrape_all.sh --http-only` — Reddit, 4chan, Bitcointalk, GitHub, Telegram, Bluesky (sans Selenium).
+- `./test_scrape_5.sh` — test rapide (quelques posts sur 5 plateformes).
 
 ---
 
-## Références et auteurs
+## Perspectives
 
-**Références**
+- **Extension des sources** : intégration d’autres plateformes ou flux (e.g. Discord, TikTok déjà partiellement présents ; agrégation de news).
+- **Enrichissement NLP** : fine-tuning des modèles sur des données crypto labellisées ; prise en compte des emojis et du ton (sarcasme).
+- **Modélisation** : extension des modèles VAR ; prédiction de rendements à court terme à partir des séries de sentiment ; backtests simples.
+- **Production** : renforcement des tests unitaires et d’intégration ; monitoring et logs ; optimisation des requêtes et du cache.
+- **Documentation** : tutoriel pas à pas pour reproduire les résultats économétriques à partir du dashboard.
 
-- CryptoBERT : [ElKulako/cryptobert](https://github.com/ElKulako/cryptobert). *CryptoBERT: A Pre-trained Language Model for Cryptocurrency Sentiment Analysis*, IEEE Intelligent Systems, 38(4), 2023.
-- FinBERT : [ProsusAI/finbert](https://github.com/ProsusAI/finbert). Modèle de sentiment financier basé sur BERT.
-- Kraaijeveld, O., & De Smedt, J. (2020). *The predictive power of public Twitter sentiment for forecasting cryptocurrency prices*, Journal of Computational Finance.
+---
 
-**Auteurs**
+**Références** — CryptoBERT : [ElKulako/cryptobert](https://github.com/ElKulako/cryptobert) ; FinBERT : [ProsusAI/finbert](https://github.com/ProsusAI/finbert) ; Kraaijeveld & De Smedt (2020), *The predictive power of public Twitter sentiment for forecasting cryptocurrency prices*, Journal of Computational Finance.
 
-Projet réalisé dans le cadre du Master MoSEF (Modélisation Statistique Économique et Financière), Université Paris 1 Panthéon-Sorbonne.
-
-- Arthur Destribats  
-- Niama El Kamal  
-- Matéo Martin  
-
-*Projet à vocation académique.*
+**Auteurs** — Arthur Destribats, Niama El Kamal, Matéo Martin — Master MoSEF, Université Paris 1 Panthéon-Sorbonne. *Projet à vocation académique.*
