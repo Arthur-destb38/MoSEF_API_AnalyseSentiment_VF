@@ -132,3 +132,4 @@ poetry run uvicorn app.main:app --reload   # API : http://127.0.0.1:8000
 **Références** — CryptoBERT : [ElKulako/cryptobert](https://github.com/ElKulako/cryptobert) ; FinBERT : [ProsusAI/finbert](https://github.com/ProsusAI/finbert) ; Kraaijeveld & De Smedt (2020), *The predictive power of public Twitter sentiment for forecasting cryptocurrency prices*, Journal of Computational Finance.
 
 **Auteurs** — Arthur Destribats, Niama El Kamal, Matéo Martin — Master MoSEF, Université Paris 1 Panthéon-Sorbonne. *Projet à vocation académique.*
+# MoSEF_FinanceQuantitative_Projet2_EnCours_V1
