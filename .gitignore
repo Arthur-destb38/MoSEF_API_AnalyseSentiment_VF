@@ -1,6 +1,14 @@
 # Python
 __pycache__/
 *.py[cod]
+*.pyo
+.eggs/
+*.egg
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
 
 # Virtual env
 .venv/
@@ -10,6 +18,7 @@ env/
 # IDE
 .idea/
 .vscode/
+*.sublime-*
 
 # OS
 .DS_Store
@@ -21,29 +30,40 @@ Thumbs.db
 *.temp
 *.swp
 *~
+*.bak
 
 # Tests / cache
 .pytest_cache/
 .coverage
 htmlcov/
+.tox/
+
+# Jupyter
+.ipynb_checkpoints/
 
 # Env vars (ne pas commiter les secrets)
 .env
 .env.*
 !.env.example
 
-# Streamlit secrets (ne pas commiter)
+# Streamlit
 .streamlit/secrets.toml
 
 # Données locales (ne pas commiter)
 data/*.jsonl
 data/*.db
+data/*.sqlite
 data/twitter_cookies.json
 data/exports/*
 !data/exports/.gitkeep
 
-# Données externes (CSV lourds, garder data_externe/ et README)
-data_externe/*.csv
-# Fichiers trop lourds pour GitHub (> 100 Mo)
+# Données externes (lourds ou régénérables)
+data_externe/**/*.csv
 data_externe/**/*.bak
-data_externe/BMC_Twitter_influenceur/DB_CryptoInflu.bak
+data_externe/**/*.rar
+data_externe/**/*.zip
+data_externe/**/*.pdf
+data_externe/**/*.docx
+data_externe/**/*.xlsx
+# Garder structure + README
+!data_externe/README.md
